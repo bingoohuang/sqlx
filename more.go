@@ -32,6 +32,8 @@ func NewSQLMore(dbDriver, dbURI string) *SQLMore {
 	mores := []More{NewMySQLMore(dbDriver)}
 	sqlMore := &SQLMore{DbDriver: dbDriver}
 
+	sqlMore.EnhancedDbURI = dbURI
+	
 	for _, m := range mores {
 		if m.Matches() {
 			sqlMore.more = m

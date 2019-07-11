@@ -11,3 +11,8 @@ more about golang db sql
 
     * 自动增强连接属性: `charset=utf8mb4&parseTime=true&loc=Local&timeout=10s&writeTimeout=10s&readTimeout=10s`
     * 增强GormDB建表选项: `db.Set("gorm:table_options", "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4")`
+    * MySQLDump
+    
+1. ExecSQL
+1. SplitSqls
+

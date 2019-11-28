@@ -5,6 +5,7 @@ import (
 	"unicode/utf8"
 )
 
+// SplitSqls splits sqls by separate
 func SplitSqls(sqls string, separate rune) []string {
 	subs := make([]string, 0)
 
@@ -17,7 +18,9 @@ func SplitSqls(sqls string, separate rune) []string {
 		runeValue, w = utf8.DecodeRuneInString(sqls[i:])
 
 		var nextRuneValue rune
+
 		nextWidth := 0
+
 		if i+w < l {
 			nextRuneValue, nextWidth = utf8.DecodeRuneInString(sqls[i+w:])
 		}

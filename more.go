@@ -38,6 +38,7 @@ func NewSQLMore(dbDriver, dbURI string) *SQLMore {
 		if m.Matches() {
 			sqlMore.more = m
 			sqlMore.EnhancedDbURI = m.EnhanceURI(dbURI)
+
 			break
 		}
 	}
@@ -85,6 +86,7 @@ func (s *SQLMore) GormOpen() (*gorm.DB, error) {
 	}
 
 	SetConnectionPool(db.DB())
+
 	return db, nil
 }
 
@@ -95,5 +97,6 @@ func SetConnectionPool(db *sql.DB) *sql.DB {
 	db.SetMaxOpenConns(10)
 	db.SetMaxIdleConns(0)
 	db.SetConnMaxLifetime(10 * time.Second)
+
 	return db
 }

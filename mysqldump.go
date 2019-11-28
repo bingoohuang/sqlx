@@ -59,7 +59,7 @@ type mySQLDump struct {
 	db *sql.DB
 }
 
-// Creates a MYSQL Dump based on the options supplied through the dumper.
+// MySQLDump creates a MYSQL Dump based on the options supplied through the dumper.
 func MySQLDump(db *sql.DB, writer io.Writer) error {
 	m := &mySQLDump{db: db}
 
@@ -73,6 +73,7 @@ func MySQLDump(db *sql.DB, writer io.Writer) error {
 	if err != nil {
 		return err
 	}
+
 	if err = t.Execute(writer, struct{ DumpVersion, ServerVersion string }{
 		DumpVersion: version, ServerVersion: serverVersion}); err != nil {
 		return err
@@ -100,6 +101,7 @@ func MySQLDump(db *sql.DB, writer io.Writer) error {
 	if err != nil {
 		return err
 	}
+
 	if err = t.Execute(writer, struct{ CompleteTime string }{
 		CompleteTime: time.Now().String()}); err != nil {
 		return err
@@ -124,8 +126,10 @@ func (m *mySQLDump) getTables() ([]string, error) {
 		if err := rows.Scan(&table); err != nil {
 			return tables, err
 		}
+
 		tables = append(tables, table.String)
 	}
+
 	return tables, rows.Err()
 }
 
@@ -134,6 +138,7 @@ func (m *mySQLDump) getServerVersion() (string, error) {
 	if err := m.db.QueryRow("SELECT version()").Scan(&serverVersion); err != nil {
 		return "", err
 	}
+
 	return serverVersion.String, nil
 }
 
@@ -156,12 +161,15 @@ func (m *mySQLDump) createTable(ct, ds, de *template.Template, writer io.Writer,
 
 func (m *mySQLDump) createTableSQL(name string) (string, error) {
 	var tableReturn sql.NullString
+
 	var tableSQL sql.NullString
+
 	err := m.db.QueryRow("SHOW CREATE TABLE "+name).Scan(&tableReturn, &tableSQL)
 
 	if err != nil {
 		return "", err
 	}
+
 	if tableReturn.String != name {
 		return "", errors.New("returned table is not the same as requested table")
 	}
@@ -169,12 +177,14 @@ func (m *mySQLDump) createTableSQL(name string) (string, error) {
 	return tableSQL.String, nil
 }
 
+// nolint funlen
 func (m *mySQLDump) createTableValues(ds, de *template.Template, writer io.Writer, name string) error {
 	// #nosec G202
 	rows, err := m.db.Query("SELECT * FROM " + name)
 	if err != nil {
 		return err
 	}
+
 	defer rows.Close()
 
 	// UrlGet columns
@@ -182,14 +192,17 @@ func (m *mySQLDump) createTableValues(ds, de *template.Template, writer io.Write
 	if err != nil {
 		return err
 	}
+
 	if len(columns) == 0 {
 		return errors.New("no columns in table " + name + ".")
 	}
 
 	rowsIndex := 0
+
 	for rows.Next() {
 		data := make([]*sql.NullString, len(columns))
 		ptrs := make([]interface{}, len(columns))
+
 		for i := range data {
 			ptrs[i] = &data[i]
 		}
@@ -208,6 +221,7 @@ func (m *mySQLDump) createTableValues(ds, de *template.Template, writer io.Write
 		rowsIndex++
 
 		dataStrings := make([]string, len(columns))
+
 		for key, value := range data {
 			if value != nil && value.Valid {
 				dataStrings[key] = "'" + strings.Replace(value.String, "'", "''", -1) + "'"

@@ -28,13 +28,14 @@ func TestGetTablesOk(t *testing.T) {
 
 	m := &mySQLDump{db: db}
 	result, err := m.getTables()
+
 	if err != nil {
 		t.Errorf("error was not expected while updating stats: %s", err)
 	}
 
 	// we make sure that all expectations were met
 	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Errorf("there were unfulfilled expections: %s", err)
+		t.Errorf("there were unfulfilled expectations: %s", err)
 	}
 
 	expectedResult := []string{"Test_Table_1", "Test_Table_2"}
@@ -61,13 +62,14 @@ func TestGetTablesNil(t *testing.T) {
 
 	m := &mySQLDump{db: db}
 	result, err := m.getTables()
+
 	if err != nil {
 		t.Errorf("error was not expected while updating stats: %s", err)
 	}
 
 	// we make sure that all expectations were met
 	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Errorf("there were unfulfilled expections: %s", err)
+		t.Errorf("there were unfulfilled expectations: %s", err)
 	}
 
 	expectedResult := []string{"Test_Table_1", "", "Test_Table_3"}
@@ -92,13 +94,14 @@ func TestGetServerVersionOk(t *testing.T) {
 
 	m := &mySQLDump{db: db}
 	result, err := m.getServerVersion()
+
 	if err != nil {
 		t.Errorf("error was not expected while updating stats: %s", err)
 	}
 
 	// we make sure that all expectations were met
 	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Errorf("there were unfulfilled expections: %s", err)
+		t.Errorf("there were unfulfilled expectations: %s", err)
 	}
 
 	expectedResult := "test_version"
@@ -133,7 +136,7 @@ func TestCreateTableSQLOk(t *testing.T) {
 
 	// we make sure that all expectations were met
 	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Errorf("there were unfulfilled expections: %s", err)
+		t.Errorf("there were unfulfilled expectations: %s", err)
 	}
 
 	expectedResult := "CREATE TABLE 'Test_Table' (`id` int(11) NOT NULL AUTO_INCREMENT," +
@@ -163,15 +166,17 @@ func TestCreateTableValuesOk(t *testing.T) {
 	de, _ := template.New("mysqldump_tableDataEnd").Parse(tableDataTmplEnd)
 
 	var b bytes.Buffer
+
 	m := &mySQLDump{db: db}
 	err = m.createTableValues(ds, de, &b, "test")
+
 	if err != nil {
 		t.Errorf("error was not expected while updating stats: %s", err)
 	}
 
 	// we make sure that all expectations were met
 	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Errorf("there were unfulfilled expections: %s", err)
+		t.Errorf("there were unfulfilled expectations: %s", err)
 	}
 
 	expectedResult := "\n--\n-- " +
@@ -207,15 +212,17 @@ func TestCreateTableValuesNil(t *testing.T) {
 	de, _ := template.New("mysqldump_tableDataEnd").Parse(tableDataTmplEnd)
 
 	var b bytes.Buffer
+
 	m := &mySQLDump{db: db}
 	err = m.createTableValues(ds, de, &b, "test")
+
 	if err != nil {
 		t.Errorf("error was not expected while updating stats: %s", err)
 	}
 
 	// we make sure that all expectations were met
 	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Errorf("there were unfulfilled expections: %s", err)
+		t.Errorf("there were unfulfilled expectations: %s", err)
 	}
 
 	expectedResult := "\n--\n-- " +
@@ -234,6 +241,7 @@ func TestCreateTableValuesNil(t *testing.T) {
 	}
 }
 
+// nolint funlen
 func TestCreateTableOk(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -260,15 +268,17 @@ func TestCreateTableOk(t *testing.T) {
 	de, _ := template.New("mysqldump_tableDataEnd").Parse(tableDataTmplEnd)
 
 	var b bytes.Buffer
+
 	m := &mySQLDump{db: db}
 	err = m.createTable(ct, ds, de, &b, "Test_Table")
+
 	if err != nil {
 		t.Errorf("error was not expected while updating stats: %s", err)
 	}
 
 	// we make sure that all expectations were met
 	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Errorf("there were unfulfilled expections: %s", err)
+		t.Errorf("there were unfulfilled expectations: %s", err)
 	}
 
 	result := b.String()
@@ -301,8 +311,8 @@ func TestCreateTableOk(t *testing.T) {
 	}
 }
 
+// nolint funlen
 func TestDumpOk(t *testing.T) {
-
 	tmpFile := "/tmp/test_format.sql"
 	os.Remove(tmpFile)
 

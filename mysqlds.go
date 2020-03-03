@@ -7,7 +7,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/bingoohuang/gou/str"
-	shellwords "github.com/mattn/go-shellwords"
+	"github.com/bingoohuang/shellwords"
 	"github.com/spf13/pflag"
 )
 

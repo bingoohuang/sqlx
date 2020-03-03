@@ -24,6 +24,8 @@ github.com/bingoohuang/goreflect v0.0.0-20200220033105-a0faf449f649 h1:Y4Un87LBj
 github.com/bingoohuang/goreflect v0.0.0-20200220033105-a0faf449f649/go.mod h1:Jkc9aAuGnMb+GnhLEVtdDnyIZ6Lh6APIITuY+X0HQRU=
 github.com/bingoohuang/gou v0.0.0-20200225004418-9b3655665c46 h1:18kysBxDTlkUYNhzPgJ7o4T8OnZws9WzVPprRgZRcj4=
 github.com/bingoohuang/gou v0.0.0-20200225004418-9b3655665c46/go.mod h1:lfM/iBkZzlmnl23C+mpqiXAgC6npikzZkKVfNAdC+o4=
+github.com/bingoohuang/shellwords v0.0.0-20200303142623-5c675e52d3e1 h1:ZOxJ0X7A0Y0hJHVuPfERGZO34N6DUFZj4aH2Kw1Y1J4=
+github.com/bingoohuang/shellwords v0.0.0-20200303142623-5c675e52d3e1/go.mod h1:4ETdbVSa47WB7cYJb4ke+44RDYW6WHMIe+YbvQRmcKk=
 github.com/bingoohuang/strcase v0.0.0-20190707081139-fae4a99e1218/go.mod h1:WYrcjWhT2QgbWZcYzfYqWxaxut2hPFa6if/zYwEEEio=
 github.com/cespare/xxhash v1.1.0/go.mod h1:XrSqR1VqqWfGrhpAt58auRo0WTKS1nRRg3ghfAqPWnc=
 github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDkc90ppPyw=
@@ -182,6 +184,8 @@ github.com/stretchr/testify v1.2.2/go.mod h1:a8OnRcib4nhh0OaRAV+Yts87kKdq0PP7pXf
 github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UVUgZn+9EI=
 github.com/stretchr/testify v1.4.0 h1:2E4SXV/wtOkTonXsotYi4li6zVWxYlZuYNCXe9XRJyk=
 github.com/stretchr/testify v1.4.0/go.mod h1:j7eGeouHqKxXV5pUuKE4zz7dFj8WfuZ+81PSLYec5m4=
+github.com/stretchr/testify v1.5.1 h1:nOGnQDM7FYENwehXlg/kFVnos3rEvtKTjRvOWSzb6H4=
+github.com/stretchr/testify v1.5.1/go.mod h1:5W2xD1RspED5o8YsWQXVCued0rvSQ+mT+I5cxcmMvtA=
 github.com/subosito/gotenv v1.2.0/go.mod h1:N0PQaV/YGNqwC0u51sEeR/aUtSLEXKX9iv69rRypqCw=
 github.com/tdewolff/minify v2.3.6+incompatible/go.mod h1:9Ov578KJUmAWpS6NeZwRZyT56Uf6o3Mcz9CEsg8USYs=
 github.com/tdewolff/parse v2.3.4+incompatible/go.mod h1:8oBwCsVmUkgHO8M5iCzSIDtpzXOT0WXX9cWhz+bIzJQ=

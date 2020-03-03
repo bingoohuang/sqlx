@@ -41,7 +41,11 @@ func processQuery(db SQLExec, sqlStr string, firstKey string, maxRows int, nullR
 	start := time.Now()
 
 	rows, err := db.Query(sqlStr)
-	if err != nil {
+	if err != nil || rows != nil && rows.Err() != nil {
+		if err == nil {
+			err = rows.Err()
+		}
+
 		return ExecResult{Error: err, CostTime: time.Since(start), IsQuerySQL: true, FirstKey: firstKey}
 	}
 

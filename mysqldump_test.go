@@ -1,3 +1,4 @@
+// nolint gomnd
 package sqlmore
 
 import (

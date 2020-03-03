@@ -94,9 +94,9 @@ func (s *SQLMore) GormOpen() (*gorm.DB, error) {
 func SetConnectionPool(db *sql.DB) *sql.DB {
 	// 1. https://making.pusher.com/production-ready-connection-pooling-in-go/
 	// 2. http://go-database-sql.org/connection-pool.html
-	db.SetMaxOpenConns(10)
+	db.SetMaxOpenConns(10) // nolint gomnd
 	db.SetMaxIdleConns(0)
-	db.SetConnMaxLifetime(10 * time.Second)
+	db.SetConnMaxLifetime(10 * time.Second) // nolint gomnd
 
 	return db
 }

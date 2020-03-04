@@ -128,17 +128,19 @@ func TestQueries(t *testing.T) {
 }
 
 type person struct {
-	Name string
-	Age  int
+	MyName string `name:"name"`
+	Age    int
 }
 
 type personDao struct {
-	CreatePersonTable func()                     `sql:"create table person(name varchar(100), age int)"`
-	Insert            func(p person)             `sql:"insert into person(name, age) values(:name, :age)"`
-	Find              func(name string) person   `sql:"select name, age from person where name = :1"`
-	List              func() []person            `sql:"select name, age from person"`
-	ListByName        func(name string) []person `sql:"select name, age from person where name=:"`
-	Delete            func(name string) int      `sql:"delete from person where name = :"`
+	CreatePersonTable func()                   `sql:"create table person(name varchar(100), age int)"`
+	Insert            func(person)             `sql:"insert into person(name, age) values(:name, :age)"`
+	Find              func(name string) person `sql:"select name, age from person where name = :1"`
+	List              func() []person          `sql:"select name, age from person"`
+	ListByName        func(string) []person    `sql:"select name, age from person where name=:"`
+	Delete            func(string) int         `sql:"delete from person where name = :"`
+
+	GetAge func(name string) struct{ Age int } `sql:"select age from person where name=:1"`
 }
 
 func TestDao(t *testing.T) {
@@ -149,20 +151,22 @@ func TestDao(t *testing.T) {
 	// 建表
 	dao.CreatePersonTable()
 	// 插入
-	dao.Insert(person{Name: "bingoohuang", Age: 100})
+	dao.Insert(person{MyName: "bingoohuang", Age: 100})
 	// 查找
-	assert.Equal(t, person{Name: "bingoohuang", Age: 100}, dao.Find("bingoohuang"))
+	assert.Equal(t, person{MyName: "bingoohuang", Age: 100}, dao.Find("bingoohuang"))
 	// 刪除
 	assert.Equal(t, 1, dao.Delete("bingoohuang"))
 	// 再找，找不到，返回零值ß
 	assert.Zero(t, dao.Find("bingoohuang"))
 	// 插入
-	dao.Insert(person{Name: "dingoohuang", Age: 200})
-	dao.Insert(person{Name: "pingoohuang", Age: 300})
+	dao.Insert(person{MyName: "dingoohuang", Age: 200})
+	dao.Insert(person{MyName: "pingoohuang", Age: 300})
 	// 列表
-	assert.Equal(t, []person{{Name: "dingoohuang", Age: 200}, {Name: "pingoohuang", Age: 300}}, dao.List())
+	assert.Equal(t, []person{{MyName: "dingoohuang", Age: 200}, {MyName: "pingoohuang", Age: 300}}, dao.List())
 	// 条件列表
-	assert.Equal(t, []person{{Name: "dingoohuang", Age: 200}}, dao.ListByName("dingoohuang"))
+	assert.Equal(t, []person{{MyName: "dingoohuang", Age: 200}}, dao.ListByName("dingoohuang"))
+
+	assert.Equal(t, struct{ Age int }{Age: 200}, dao.GetAge("dingoohuang"))
 }
 
 func openDB(t *testing.T) *sql.DB {

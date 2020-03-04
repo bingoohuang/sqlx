@@ -102,12 +102,7 @@ func MySQLDump(db *sql.DB, writer io.Writer) error {
 		return err
 	}
 
-	if err = t.Execute(writer, struct{ CompleteTime string }{
-		CompleteTime: time.Now().String()}); err != nil {
-		return err
-	}
-
-	return nil
+	return t.Execute(writer, struct{ CompleteTime string }{CompleteTime: time.Now().String()})
 }
 
 func (m *mySQLDump) getTables() ([]string, error) {
@@ -152,11 +147,7 @@ func (m *mySQLDump) createTable(ct, ds, de *template.Template, writer io.Writer,
 		return err
 	}
 
-	if err = m.createTableValues(ds, de, writer, name); err != nil {
-		return err
-	}
-
-	return nil
+	return m.createTableValues(ds, de, writer, name)
 }
 
 func (m *mySQLDump) createTableSQL(name string) (string, error) {

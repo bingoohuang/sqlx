@@ -12,7 +12,33 @@ import (
 	"github.com/bingoohuang/strcase"
 )
 
+func replaceQuestionMark4Postgres(s string) string {
+	r := ""
+
+	for seq := 1; ; seq++ {
+		pos := strings.Index(s, "?")
+		if pos < 0 {
+			r += s
+			break
+		}
+
+		r += s[0:pos] + "$" + strconv.Itoa(seq)
+		s = s[pos+1:]
+	}
+
+	return r
+}
+
+// CreateDao fulfils the dao (should be pointer)
 func CreateDao(driverName string, db *sql.DB, dao interface{}) error {
+	sqlFilter := func(s string) string {
+		if driverName == "postgres" {
+			return replaceQuestionMark4Postgres(s)
+		}
+
+		return s
+	}
+
 	v := reflect.ValueOf(dao)
 	v = reflect.Indirect(v)
 
@@ -24,7 +50,8 @@ func CreateDao(driverName string, db *sql.DB, dao interface{}) error {
 		}
 
 		sqlStmt := f.Tag.Get("sql")
-		p, err := parseSQL(f.Name, sqlStmt, "?")
+		p, err := parseSQL(f.Name, sqlStmt)
+		p.SQL = sqlFilter(p.SQL)
 
 		if err != nil {
 			return fmt.Errorf("failed to parse sql %v error %v", sqlStmt, err)
@@ -134,11 +161,11 @@ func (p sqlParsed) isBindBy(by ...bindBy) bool {
 
 var sqlre = regexp.MustCompile(`:\w*`) // nolint gochecknoglobals
 
-func parseSQL(sqlID, stmt, bindMark string) (*sqlParsed, error) {
+func parseSQL(sqlID, stmt string) (*sqlParsed, error) {
 	vars := make([]string, 0)
 	parsed := sqlre.ReplaceAllStringFunc(stmt, func(bindVar string) string {
 		vars = append(vars, bindVar[1:])
-		return bindMark
+		return "?"
 	})
 
 	bindBy, maxSeq, err := parseBindBy(vars)

@@ -122,7 +122,7 @@ func TestQueries(t *testing.T) {
 }
 
 func TestParseSQL(t *testing.T) {
-	parsed, err := parseSQL("", "insert into person(name, age) values(:name, :age)", "?")
+	parsed, err := parseSQL("", "insert into person(name, age) values(:name, :age)")
 	assert.Nil(t, err)
 	assert.Equal(t, &sqlParsed{
 		SQL:    "insert into person(name, age) values(?, ?)",
@@ -131,7 +131,7 @@ func TestParseSQL(t *testing.T) {
 		MaxSeq: 2,
 	}, parsed)
 
-	parsed, err = parseSQL("", "insert into person(name, age) values(:1, :2)", "?")
+	parsed, err = parseSQL("", "insert into person(name, age) values(:1, :2)")
 	assert.Nil(t, err)
 	assert.Equal(t, &sqlParsed{
 		SQL:    "insert into person(name, age) values(?, ?)",
@@ -140,7 +140,7 @@ func TestParseSQL(t *testing.T) {
 		MaxSeq: 2,
 	}, parsed)
 
-	parsed, err = parseSQL("", "insert into person(name, age) values(:, :)", "?")
+	parsed, err = parseSQL("", "insert into person(name, age) values(:, :)")
 	assert.Nil(t, err)
 	assert.Equal(t, &sqlParsed{
 		SQL:    "insert into person(name, age) values(?, ?)",
@@ -149,7 +149,7 @@ func TestParseSQL(t *testing.T) {
 		MaxSeq: 2,
 	}, parsed)
 
-	parsed, err = parseSQL("", "insert into person(name, age) values('a', 'b')", "?")
+	parsed, err = parseSQL("", "insert into person(name, age) values('a', 'b')")
 	assert.Nil(t, err)
 	assert.Equal(t, &sqlParsed{
 		SQL:    "insert into person(name, age) values('a', 'b')",
@@ -157,7 +157,7 @@ func TestParseSQL(t *testing.T) {
 		Vars:   []string{},
 	}, parsed)
 
-	parsed, err = parseSQL("", "insert into person(name, age) values(:, :age)", "?")
+	parsed, err = parseSQL("", "insert into person(name, age) values(:, :age)")
 	assert.Nil(t, parsed)
 	assert.NotNil(t, err)
 }

@@ -26,30 +26,32 @@ type personDao struct {
 }
 
 func TestDao(t *testing.T) {
+	that := assert.New(t)
+
 	// 生成DAO
 	dao := &personDao{}
-	assert.Nil(t, sqlmore.CreateDao("sqlite3", openDB(t), dao))
+	that.Nil(sqlmore.CreateDao("sqlite3", openDB(t), dao))
 
 	// 建表
 	dao.CreateTable()
 	// 插入
 	dao.Add(person{"100", 100})
 	// 查找
-	assert.Equal(t, person{"100", 100}, dao.Find("100"))
+	that.Equal(person{"100", 100}, dao.Find("100"))
 	// 刪除
-	assert.Equal(t, 1, dao.Delete("100"))
+	that.Equal(1, dao.Delete("100"))
 	// 再找，找不到，返回零值
-	assert.Zero(t, dao.Find("100"))
+	that.Zero(dao.Find("100"))
 	// 插入
 	dao.Add(person{"200", 200})
 	dao.AddAll(person{"300", 300}, person{"400", 400})
 
 	// 列表
-	assert.Equal(t, []person{{"200", 200}, {"300", 300}, person{"400", 400}}, dao.ListAll())
+	that.Equal([]person{{"200", 200}, {"300", 300}, person{"400", 400}}, dao.ListAll())
 	// 条件列表
-	assert.Equal(t, []person{{"200", 200}}, dao.ListByID("200"))
+	that.Equal([]person{{"200", 200}}, dao.ListByID("200"))
 
-	assert.Equal(t, struct{ Age int }{Age: 200}, dao.GetAge("200"))
+	that.Equal(struct{ Age int }{Age: 200}, dao.GetAge("200"))
 }
 
 func openDB(t *testing.T) *sql.DB {

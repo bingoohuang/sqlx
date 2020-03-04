@@ -2,6 +2,10 @@ package sqlmore
 
 import (
 	"bufio"
+	"bytes"
+	"fmt"
+	"io"
+	"os"
 	"regexp"
 	"strings"
 )
@@ -88,4 +92,46 @@ func (s *DotSQLScanner) Run(io *bufio.Scanner) map[string]DotSQL {
 	}
 
 	return s.queries
+}
+
+// DotSQLSet is the set of SQL statements
+type DotSQLSet struct {
+	Sqls map[string]DotSQL
+}
+
+// Raw returns the query, everything after the --name tag
+func (d DotSQLSet) Raw(name string) (string, error) {
+	return d.lookupQuery(name)
+}
+
+func (d DotSQLSet) lookupQuery(name string) (query string, err error) {
+	s, ok := d.Sqls[name]
+	if !ok {
+		return "", fmt.Errorf("dotsql: '%s' could not be found", name)
+	}
+
+	return s.Content, nil
+}
+
+// DotSQLLoad imports sql queries from any io.Reader.
+func DotSQLLoad(r io.Reader) (*DotSQLSet, error) {
+	scanner := &DotSQLScanner{}
+	return &DotSQLSet{scanner.Run(bufio.NewScanner(r))}, nil
+}
+
+// DotSQLLoadFile imports SQL queries from the file.
+func DotSQLLoadFile(sqlFile string) (*DotSQLSet, error) {
+	f, err := os.Open(sqlFile)
+	if err != nil {
+		return nil, err
+	}
+
+	defer f.Close()
+
+	return DotSQLLoad(f)
+}
+
+// DotSQLLoadString imports SQL queries from the string.
+func DotSQLLoadString(sql string) (*DotSQLSet, error) {
+	return DotSQLLoad(bytes.NewBufferString(sql))
 }

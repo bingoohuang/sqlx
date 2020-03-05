@@ -25,6 +25,10 @@ type personDao struct {
 	ListByID    func(string) []person          `sql:"select id, age from person where id=:1"`
 	Delete      func(string) int               `sql:"delete from person where id=:1"`
 	GetAge      func(string) struct{ Age int } `sql:"select age from person where id=:1"`
+
+	GetAgeX func(string) (struct{ Age int }, error) `sql:"select age from person where xid=:1"`
+
+	Err error // 添加这个字段，可以用来单独接收error信息
 }
 
 func TestDao(t *testing.T) {
@@ -54,6 +58,16 @@ func TestDao(t *testing.T) {
 	that.Equal([]person{{"200", 200}}, dao.ListByID("200"))
 	// 匿名结构
 	that.Equal(struct{ Age int }{Age: 200}, dao.GetAge("200"))
+
+	that.Nil(dao.Err)
+	ageX, err := dao.GetAgeX("200")
+	that.Error(err)
+	that.Zero(ageX)
+	that.Error(dao.Err)
+
+	// 条件列表
+	that.Equal([]person{{"200", 200}}, dao.ListByID("200"))
+	that.Nil(dao.Err) // 验证Err字段是否重置
 }
 
 func openDB(t *testing.T) *sql.DB {

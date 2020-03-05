@@ -29,6 +29,10 @@ func replaceQuestionMark4Postgres(s string) string {
 	return r
 }
 
+var errorInterface = reflect.TypeOf((*error)(nil)).Elem() // nolint gochecknoglobals
+
+type errorSetter func(error)
+
 // CreateDao fulfils the dao (should be pointer)
 func CreateDao(driverName string, db *sql.DB, dao interface{}) error {
 	sqlFilter := func(s string) string {
@@ -39,39 +43,71 @@ func CreateDao(driverName string, db *sql.DB, dao interface{}) error {
 		return s
 	}
 
-	v := reflect.ValueOf(dao)
-	v = reflect.Indirect(v)
+	v := reflect.Indirect(reflect.ValueOf(dao))
+	errSetter := createErrorSetter(v)
 
 	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
 		f := v.Type().Field(i)
 
-		if f.PkgPath != "" /* not exportable?*/ || f.Type.Kind() != reflect.Func {
+		if f.PkgPath != "" /* not exportable */ || f.Type.Kind() != reflect.Func {
 			continue
 		}
 
 		sqlStmt := f.Tag.Get("sql")
 		p, err := parseSQL(f.Name, sqlStmt)
-		p.SQL = sqlFilter(p.SQL)
 
 		if err != nil {
-			return fmt.Errorf("failed to parse sql %v error %v", sqlStmt, err)
+			return fmt.Errorf("failed to parse sql %v error %w", sqlStmt, err)
 		}
 
+		p.SQL = sqlFilter(p.SQL)
 		numIn := f.Type.NumIn()
-		numOut := f.Type.NumOut()
-		_, isQuerySQL := IsQuerySQL(sqlStmt)
 
 		if err := p.checkFuncInOut(numIn, sqlStmt, f); err != nil {
 			return err
 		}
 
-		p.createFn(f, numIn, numOut, db, isQuerySQL, v.Field(i))
+		if err := p.createFn(f, db, field, errSetter); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-func (p *sqlParsed) createFn(f reflect.StructField, numIn, numOut int, db *sql.DB, isQuerySQL bool, v reflect.Value) {
+func createErrorSetter(v reflect.Value) func(error) {
+	for i := 0; i < v.NumField(); i++ {
+		fv := v.Field(i)
+		f := v.Type().Field(i)
+
+		if f.PkgPath == "" /* exportable */ && f.Type == errorInterface {
+			return func(err error) {
+				if fv.IsNil() && err == nil {
+					return
+				}
+
+				if err == nil {
+					fv.Set(reflect.Zero(f.Type))
+				} else {
+					fv.Set(reflect.ValueOf(err))
+				}
+			}
+		}
+	}
+
+	return func(error) {}
+}
+
+func (p *sqlParsed) createFn(f reflect.StructField, db *sql.DB, v reflect.Value, errSetter errorSetter) error {
+	numIn := f.Type.NumIn()
+	numOut := f.Type.NumOut()
+
+	lastOutError := numOut > 0 && f.Type.Out(numOut-1) == errorInterface // nolint gomnd
+	if lastOutError {
+		numOut--
+	}
+
 	var fn func([]reflect.Value) ([]reflect.Value, error)
 
 	switch {
@@ -79,22 +115,40 @@ func (p *sqlParsed) createFn(f reflect.StructField, numIn, numOut int, db *sql.D
 		fn = func([]reflect.Value) ([]reflect.Value, error) { return p.exec(db) }
 	case numIn == 1 && p.isBindBy(byName) && numOut == 0:
 		fn = func(args []reflect.Value) ([]reflect.Value, error) { return p.execByNamedArg0Ret1(db, args[0]) }
-	case isQuerySQL && p.isBindBy(bySeq, byAuto, byNone) && numOut == 1:
+	case p.IsQuery && p.isBindBy(bySeq, byAuto, byNone) && numOut == 1:
 		fn = func(args []reflect.Value) ([]reflect.Value, error) { return p.queryBySeqRet1(db, f.Type.Out(0), args) }
-	case !isQuerySQL && p.isBindBy(bySeq, byAuto) && numOut == 1:
+	case !p.IsQuery && p.isBindBy(bySeq, byAuto) && numOut == 1:
 		fn = func(args []reflect.Value) ([]reflect.Value, error) { return p.execBySeqRet1(db, f.Type.Out(0), args) }
 	}
 
-	if fn != nil {
-		v.Set(reflect.MakeFunc(f.Type, func(args []reflect.Value) (results []reflect.Value) {
-			values, err := fn(args)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "execute %s error %v\n", p.SQL, err)
-			}
+	if fn == nil {
+		err := fmt.Errorf("unsupportd func %v", f.Type)
+		p.logError(err)
 
-			return values
-		}))
+		return err
 	}
+
+	v.Set(reflect.MakeFunc(f.Type, func(args []reflect.Value) []reflect.Value {
+		errSetter(nil)
+		values, err := fn(args)
+		if err != nil {
+			errSetter(err)
+			p.logError(err)
+
+			values = make([]reflect.Value, numOut, numOut+1) // nolint gomnd
+			for i := 0; i < numOut; i++ {
+				values[i] = reflect.Zero(f.Type.Out(i))
+			}
+		}
+
+		if lastOutError {
+			values = append(values, reflect.ValueOf(err))
+		}
+
+		return values
+	}))
+
+	return nil
 }
 
 func (p *sqlParsed) checkFuncInOut(numIn int, sqlStmt string, f reflect.StructField) error {
@@ -142,11 +196,12 @@ func (b bindBy) String() string {
 }
 
 type sqlParsed struct {
-	ID     string
-	SQL    string
-	BindBy bindBy
-	Vars   []string
-	MaxSeq int
+	ID      string
+	SQL     string
+	BindBy  bindBy
+	Vars    []string
+	MaxSeq  int
+	IsQuery bool
 }
 
 func (p sqlParsed) isBindBy(by ...bindBy) bool {
@@ -173,12 +228,15 @@ func parseSQL(sqlID, stmt string) (*sqlParsed, error) {
 		return nil, err
 	}
 
+	_, isQuery := IsQuerySQL(parsed)
+
 	return &sqlParsed{
-		ID:     sqlID,
-		SQL:    parsed,
-		BindBy: bindBy,
-		Vars:   vars,
-		MaxSeq: maxSeq,
+		ID:      sqlID,
+		SQL:     parsed,
+		BindBy:  bindBy,
+		Vars:    vars,
+		MaxSeq:  maxSeq,
+		IsQuery: isQuery,
 	}, nil
 }
 
@@ -446,6 +504,10 @@ func (p *sqlParsed) makeVars(args []reflect.Value) []interface{} {
 	}
 
 	return vars
+}
+
+func (p *sqlParsed) logError(err error) {
+	fmt.Fprintf(os.Stderr, "%v\n", err)
 }
 
 func convertRowsAffected(result sql.Result, stmt string, outType reflect.Type) (reflect.Value, error) {

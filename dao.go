@@ -51,6 +51,8 @@ type CreateDaoOpt struct {
 	Error        *error
 	Ctx          context.Context
 	QueryMaxRows int `default:"-1"`
+
+	RowScanInterceptor RowScanInterceptor
 }
 
 // CreateDaoOpter defines the option pattern interface for CreateDaoOpt.
@@ -78,6 +80,22 @@ func WithContext(ctx context.Context) CreateDaoOpter {
 func WithQueryMaxRows(maxRows int) CreateDaoOpter {
 	return CreateDaoOptFn(func(opt *CreateDaoOpt) { opt.QueryMaxRows = maxRows })
 }
+
+// WithRowScanInterceptor specifies the RowScanInterceptor after a row fetched.
+func WithRowScanInterceptor(interceptor RowScanInterceptor) CreateDaoOpter {
+	return CreateDaoOptFn(func(opt *CreateDaoOpt) { opt.RowScanInterceptor = interceptor })
+}
+
+// RowScanInterceptor defines the interceptor after a row scanning.
+type RowScanInterceptor interface {
+	After(rowIndex int, v interface{}) (bool, error)
+}
+
+// RowScanInterceptorFn defines the interceptor function after a row scanning.
+type RowScanInterceptorFn func(rowIndex int, v interface{}) (bool, error)
+
+// After is revoked after after a row scanning.
+func (r RowScanInterceptorFn) After(rowIndex int, v interface{}) (bool, error) { return r(rowIndex, v) }
 
 // CreateDao fulfils the dao (should be pointer)
 func CreateDao(driverName string, db *sql.DB, dao interface{}, createDaoOpts ...CreateDaoOpter) error {
@@ -485,7 +503,6 @@ func (p *sqlParsed) execBySeqRet1(db *sql.DB, outType reflect.Type, args []refle
 }
 
 func (p *sqlParsed) queryBySeqRet1(db *sql.DB, outType reflect.Type, args []reflect.Value) ([]reflect.Value, error) {
-	vars := p.makeVars(args)
 	isOutSlice := outType.Kind() == reflect.Slice
 	outSlice := reflect.Value{}
 
@@ -494,15 +511,9 @@ func (p *sqlParsed) queryBySeqRet1(db *sql.DB, outType reflect.Type, args []refl
 		outType = outType.Elem()
 	}
 
-	p.logPrepare(vars)
-
-	rows, err := db.QueryContext(p.opt.Ctx, p.SQL, vars...)
-	if err != nil || rows.Err() != nil {
-		if err == nil {
-			err = rows.Err()
-		}
-
-		return nil, fmt.Errorf("execute %s error %w", p.SQL, err)
+	rows, err := p.doQuery(db, args) // nolint rowserrcheck
+	if err != nil {
+		return nil, err
 	}
 
 	defer rows.Close()
@@ -512,6 +523,7 @@ func (p *sqlParsed) queryBySeqRet1(db *sql.DB, outType reflect.Type, args []refl
 		return nil, fmt.Errorf("get columns %s error %w", p.SQL, err)
 	}
 
+	interceptorFn := p.getRowScanInterceptorFn()
 	maxRows := p.opt.QueryMaxRows
 	mapFields := p.createMapFields(columns, outType)
 
@@ -521,11 +533,12 @@ func (p *sqlParsed) queryBySeqRet1(db *sql.DB, outType reflect.Type, args []refl
 			return nil, fmt.Errorf("scan rows %s error %w", p.SQL, err)
 		}
 
-		for i, field := range mapFields {
-			if field != nil {
-				f := out.FieldByName(field.Name)
-				f.Set(reflect.Indirect(reflect.ValueOf(pointers[i])))
-			}
+		fillFields(mapFields, out, pointers)
+
+		if goon, err := interceptorFn(ri, out.Interface()); err != nil {
+			return nil, err
+		} else if !goon {
+			break
 		}
 
 		if !isOutSlice {
@@ -540,6 +553,40 @@ func (p *sqlParsed) queryBySeqRet1(db *sql.DB, outType reflect.Type, args []refl
 	}
 
 	return []reflect.Value{reflect.Indirect(reflect.New(outType))}, nil
+}
+
+func (p *sqlParsed) getRowScanInterceptorFn() RowScanInterceptorFn {
+	if p.opt.RowScanInterceptor != nil {
+		return p.opt.RowScanInterceptor.After
+	}
+
+	return func(rowIndex int, v interface{}) (bool, error) { return true, nil }
+}
+
+func (p *sqlParsed) doQuery(db *sql.DB, args []reflect.Value) (*sql.Rows, error) {
+	vars := p.makeVars(args)
+
+	p.logPrepare(vars)
+
+	rows, err := db.QueryContext(p.opt.Ctx, p.SQL, vars...)
+	if err != nil || rows.Err() != nil {
+		if err == nil {
+			err = rows.Err()
+		}
+
+		return nil, fmt.Errorf("execute %s error %w", p.SQL, err)
+	}
+
+	return rows, nil
+}
+
+func fillFields(mapFields []*reflect.StructField, out reflect.Value, pointers []interface{}) {
+	for i, field := range mapFields {
+		if field != nil {
+			f := out.FieldByName(field.Name)
+			f.Set(reflect.Indirect(reflect.ValueOf(pointers[i])))
+		}
+	}
 }
 
 func resetDests(outType reflect.Type, mapFields []*reflect.StructField) ([]interface{}, reflect.Value) {

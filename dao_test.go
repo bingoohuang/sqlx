@@ -76,7 +76,7 @@ type personDao2 struct {
 
 	Err error // 添加这个字段，可以用来单独接收error信息
 
-	ListAll func() []person `sql:"select id, age from person"`
+	ListAll func() []person `sql:"select id, age from person order by id"`
 }
 
 func TestDaoWithError(t *testing.T) {
@@ -125,4 +125,28 @@ func TestDaoWithContext(t *testing.T) {
 
 	peoples := dao.ListAll()
 	that.Len(peoples, 1)
+}
+
+func TestDaoWithRowScanInterceptor(t *testing.T) {
+	that := assert.New(t)
+
+	// 生成DAO，自动创建dao结构体中的函数字段
+	dao := &personDao2{}
+
+	p := person{}
+
+	that.Nil(sqlmore.CreateDao("sqlite3", openDB(t), dao,
+		sqlmore.WithRowScanInterceptor(sqlmore.RowScanInterceptorFn(func(rowIndex int, v interface{}) (bool, error) {
+			p = v.(person)
+			return false, nil
+		}))))
+
+	dao.CreateTable()
+
+	// 多值插入
+	dao.AddAll(person{"300", 300}, person{"400", 400})
+
+	peoples := dao.ListAll()
+	that.Len(peoples, 0)
+	that.Equal(person{"300", 300}, p)
 }

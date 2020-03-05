@@ -102,7 +102,8 @@ func TestQueries(t *testing.T) {
 
 	dot, err := DotSQLLoadString(`
 	-- name: select
-	SELECT * from users
+	SELECT * from users;
+
 	-- name: insert
 	INSERT INTO users (?, ?, ?)
 	`)

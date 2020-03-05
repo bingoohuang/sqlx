@@ -150,3 +150,56 @@ func TestDaoWithRowScanInterceptor(t *testing.T) {
 	that.Len(peoples, 0)
 	that.Equal(person{"300", 300}, p)
 }
+
+// personDao3 定义对person表操作的所有方法
+type personDao3 struct {
+	CreateTable func()
+	AddAll      func(...person)
+	ListAll     func() []person
+}
+
+const dotSQL = `
+-- name: CreateTable
+create table person(id varchar(100), age int);
+
+-- name: AddAll
+insert into person(id, age) values(:id, :age);
+
+-- name: ListAll delimiter: /
+select id, age from person order by id/
+`
+
+func TestDaoWithDotSQLString(t *testing.T) {
+	that := assert.New(t)
+
+	// 生成DAO，自动创建dao结构体中的函数字段
+	dao := &personDao3{}
+
+	that.Nil(sqlmore.CreateDao("sqlite3", openDB(t), dao, sqlmore.WithDotSQLString(dotSQL)))
+
+	dao.CreateTable()
+
+	// 多值插入
+	dao.AddAll(person{"300", 300}, person{"400", 400})
+
+	// 列表
+	that.Equal([]person{{"300", 300}, person{"400", 400}}, dao.ListAll())
+}
+
+func TestDaoWithDotSQLFile(t *testing.T) {
+	that := assert.New(t)
+
+	// 生成DAO，自动创建dao结构体中的函数字段
+	dao := &personDao3{}
+
+	that.Nil(sqlmore.CreateDao("sqlite3", openDB(t), dao,
+		sqlmore.WithDotSQLFile(`testdata/dao3.sql`)))
+
+	dao.CreateTable()
+
+	// 多值插入
+	dao.AddAll(person{"300", 300}, person{"400", 400})
+
+	// 列表
+	that.Equal([]person{{"300", 300}, person{"400", 400}}, dao.ListAll())
+}

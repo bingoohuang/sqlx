@@ -44,11 +44,15 @@ type DotSQLScanner struct {
 	current DotSQLItem
 }
 
+func (s *DotSQLScanner) createNewItem(name string, tag map[string]string) {
+	s.current = DotSQLItem{Name: name, Attrs: tag}
+}
+
 type stateFn func() stateFn
 
 func (s *DotSQLScanner) initialState() stateFn {
 	if tag, name := ParseDotTag(s.line, "--", "name"); name != "" {
-		s.current = DotSQLItem{Name: name, Attrs: tag}
+		s.createNewItem(name, tag)
 
 		return s.queryState
 	}
@@ -58,7 +62,7 @@ func (s *DotSQLScanner) initialState() stateFn {
 
 func (s *DotSQLScanner) queryState() stateFn {
 	if tag, name := ParseDotTag(s.line, "--", "name"); name != "" {
-		s.current = DotSQLItem{Name: name, Attrs: tag}
+		s.createNewItem(name, tag)
 	} else {
 		s.appendQueryLine()
 	}
@@ -72,12 +76,25 @@ func (s *DotSQLScanner) appendQueryLine() {
 		return
 	}
 
-	current := s.queries[s.current.Name]
+	current := s.current
 	if len(current.Content) > 0 {
 		current.Content += "\n"
 	}
 
 	current.Content += line
+
+	delimiter := current.Attrs["delimiter"]
+	if delimiter == "" {
+		delimiter = ";"
+	}
+
+	sql := current.Content
+	sql = strings.TrimSpace(sql)
+	sql = strings.TrimSuffix(sql, delimiter)
+	sql = strings.TrimSpace(sql)
+
+	current.Content = sql
+
 	s.queries[s.current.Name] = current
 }
 

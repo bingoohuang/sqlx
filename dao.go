@@ -53,6 +53,8 @@ type CreateDaoOpt struct {
 	QueryMaxRows int `default:"-1"`
 
 	RowScanInterceptor RowScanInterceptor
+
+	DotSQL *DotSQL
 }
 
 // CreateDaoOpter defines the option pattern interface for CreateDaoOpt.
@@ -79,6 +81,30 @@ func WithContext(ctx context.Context) CreateDaoOpter {
 // WithQueryMaxRows specifies the max rows to be fetched when execute query.
 func WithQueryMaxRows(maxRows int) CreateDaoOpter {
 	return CreateDaoOptFn(func(opt *CreateDaoOpt) { opt.QueryMaxRows = maxRows })
+}
+
+// WithDotSQLFile imports SQL queries from the file.
+func WithDotSQLFile(sqlFile string) CreateDaoOpter {
+	return CreateDaoOptFn(func(opt *CreateDaoOpt) {
+		ds, err := DotSQLLoadFile(sqlFile)
+		if err != nil {
+			panic(err)
+		}
+
+		opt.DotSQL = ds
+	})
+}
+
+// WithDotSQLString imports SQL queries from the string.
+func WithDotSQLString(s string) CreateDaoOpter {
+	return CreateDaoOptFn(func(opt *CreateDaoOpt) {
+		ds, err := DotSQLLoadString(s)
+		if err != nil {
+			panic(err)
+		}
+
+		opt.DotSQL = ds
+	})
 }
 
 // WithRowScanInterceptor specifies the RowScanInterceptor after a row fetched.
@@ -125,6 +151,14 @@ func CreateDao(driverName string, db *sql.DB, dao interface{}, createDaoOpts ...
 		}
 
 		sqlStmt := f.Tag.Get("sql")
+		if sqlStmt == "" && option.DotSQL != nil {
+			sqlStmt, _ = option.DotSQL.Raw(f.Name)
+		}
+
+		if sqlStmt == "" {
+			return fmt.Errorf("failed to find sql with name %s", f.Name)
+		}
+
 		p, err := parseSQL(f.Name, sqlStmt)
 		p.opt = option
 
@@ -312,12 +346,22 @@ func (p sqlParsed) isBindBy(by ...bindBy) bool {
 	return false
 }
 
-var sqlre = regexp.MustCompile(`:\w*`) // nolint gochecknoglobals
+var sqlre = regexp.MustCompile(`'?:\w*'?`) // nolint gochecknoglobals
 
 func parseSQL(sqlID, stmt string) (*sqlParsed, error) {
 	vars := make([]string, 0)
-	parsed := sqlre.ReplaceAllStringFunc(stmt, func(bindVar string) string {
-		vars = append(vars, bindVar[1:])
+	parsed := sqlre.ReplaceAllStringFunc(stmt, func(v string) string {
+		if v[0:1] == "'" {
+			v = v[2:]
+		} else {
+			v = v[1:]
+		}
+
+		if v != "" && v[len(v)-1:] == "'" {
+			v = v[:len(v)-1]
+		}
+
+		vars = append(vars, v)
 		return "?"
 	})
 

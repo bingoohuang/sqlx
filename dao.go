@@ -525,7 +525,11 @@ func (p *sqlParsed) createVars(beanSize int, item, bean reflect.Value, itemType 
 }
 
 func (p *sqlParsed) logPrepare(vars interface{}) {
-	fmt.Printf("start to exec %s: %s with args %v\n", p.ID, p.SQL, vars)
+	if p.MaxSeq == 0 {
+		fmt.Printf("start to exec %s: [%s]\n", p.ID, p.SQL)
+	} else {
+		fmt.Printf("start to exec %s: [%s] with args %v\n", p.ID, p.SQL, vars)
+	}
 }
 
 func (p *sqlParsed) execBySeqRet1(db *sql.DB, outType reflect.Type, args []reflect.Value) ([]reflect.Value, error) {

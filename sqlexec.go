@@ -55,15 +55,13 @@ func processQuery(db SQLExec, sqlStr string, firstKey string, maxRows int, nullR
 	}
 
 	columnSize := len(columns)
-
 	columnTypes, _ := rows.ColumnTypes()
 	columnLobs := make([]bool, columnSize)
+	data := make([][]string, 0)
 
 	for i := 0; i < len(columnTypes); i++ {
 		columnLobs[i] = ContainsIgnoreCase(columnTypes[i].DatabaseTypeName(), "LOB")
 	}
-
-	data := make([][]string, 0)
 
 	for row := 0; rows.Next() && (maxRows == 0 || row < maxRows); row++ {
 		holders := make([]sql.NullString, columnSize)
@@ -74,8 +72,7 @@ func processQuery(db SQLExec, sqlStr string, firstKey string, maxRows int, nullR
 		}
 
 		if err := rows.Scan(pointers...); err != nil {
-			return ExecResult{Error: err, CostTime: time.Since(start), Headers: columns,
-				Rows: data, IsQuerySQL: true}
+			return ExecResult{Error: err, CostTime: time.Since(start), Headers: columns, Rows: data, IsQuerySQL: true}
 		}
 
 		values := make([]string, columnSize)
@@ -91,8 +88,7 @@ func processQuery(db SQLExec, sqlStr string, firstKey string, maxRows int, nullR
 		data = append(data, values)
 	}
 
-	return ExecResult{Error: err, CostTime: time.Since(start), Headers: columns,
-		Rows: data, IsQuerySQL: true}
+	return ExecResult{Error: err, CostTime: time.Since(start), Headers: columns, Rows: data, IsQuerySQL: true}
 }
 
 func execNonQuery(db SQLExec, sqlStr string, firstKey string) ExecResult {

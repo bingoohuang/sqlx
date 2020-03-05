@@ -10,8 +10,8 @@ import (
 	"strings"
 )
 
-// DotSQL tells the SQL details
-type DotSQL struct {
+// DotSQLItem tells the SQL details
+type DotSQLItem struct {
 	Content string
 	Name    string
 	Attrs   map[string]string
@@ -28,7 +28,6 @@ func ParseDotTag(line, prefix, mainTag string) (map[string]string, string) {
 	}
 
 	l = strings.TrimSpace(l[2:])
-
 	m := make(map[string]string)
 
 	for _, subs := range re.FindAllStringSubmatch(l, -1) {
@@ -41,15 +40,15 @@ func ParseDotTag(line, prefix, mainTag string) (map[string]string, string) {
 // DotSQLScanner scans the SQL statements from .sql files.
 type DotSQLScanner struct {
 	line    string
-	queries map[string]DotSQL
-	current DotSQL
+	queries map[string]DotSQLItem
+	current DotSQLItem
 }
 
 type stateFn func() stateFn
 
 func (s *DotSQLScanner) initialState() stateFn {
 	if tag, name := ParseDotTag(s.line, "--", "name"); name != "" {
-		s.current = DotSQL{Name: name, Attrs: tag}
+		s.current = DotSQLItem{Name: name, Attrs: tag}
 
 		return s.queryState
 	}
@@ -59,7 +58,7 @@ func (s *DotSQLScanner) initialState() stateFn {
 
 func (s *DotSQLScanner) queryState() stateFn {
 	if tag, name := ParseDotTag(s.line, "--", "name"); name != "" {
-		s.current = DotSQL{Name: name, Attrs: tag}
+		s.current = DotSQLItem{Name: name, Attrs: tag}
 	} else {
 		s.appendQueryLine()
 	}
@@ -83,8 +82,8 @@ func (s *DotSQLScanner) appendQueryLine() {
 }
 
 // Run runs the scanner
-func (s *DotSQLScanner) Run(io *bufio.Scanner) map[string]DotSQL {
-	s.queries = make(map[string]DotSQL)
+func (s *DotSQLScanner) Run(io *bufio.Scanner) map[string]DotSQLItem {
+	s.queries = make(map[string]DotSQLItem)
 
 	for state := s.initialState; io.Scan(); {
 		s.line = io.Text()
@@ -94,17 +93,15 @@ func (s *DotSQLScanner) Run(io *bufio.Scanner) map[string]DotSQL {
 	return s.queries
 }
 
-// DotSQLSet is the set of SQL statements
-type DotSQLSet struct {
-	Sqls map[string]DotSQL
+// DotSQL is the set of SQL statements
+type DotSQL struct {
+	Sqls map[string]DotSQLItem
 }
 
 // Raw returns the query, everything after the --name tag
-func (d DotSQLSet) Raw(name string) (string, error) {
-	return d.lookupQuery(name)
-}
+func (d DotSQL) Raw(name string) (string, error) { return d.lookupQuery(name) }
 
-func (d DotSQLSet) lookupQuery(name string) (query string, err error) {
+func (d DotSQL) lookupQuery(name string) (query string, err error) {
 	s, ok := d.Sqls[name]
 	if !ok {
 		return "", fmt.Errorf("dotsql: '%s' could not be found", name)
@@ -114,13 +111,12 @@ func (d DotSQLSet) lookupQuery(name string) (query string, err error) {
 }
 
 // DotSQLLoad imports sql queries from any io.Reader.
-func DotSQLLoad(r io.Reader) (*DotSQLSet, error) {
-	scanner := &DotSQLScanner{}
-	return &DotSQLSet{scanner.Run(bufio.NewScanner(r))}, nil
+func DotSQLLoad(r io.Reader) (*DotSQL, error) {
+	return &DotSQL{(&DotSQLScanner{}).Run(bufio.NewScanner(r))}, nil
 }
 
 // DotSQLLoadFile imports SQL queries from the file.
-func DotSQLLoadFile(sqlFile string) (*DotSQLSet, error) {
+func DotSQLLoadFile(sqlFile string) (*DotSQL, error) {
 	f, err := os.Open(sqlFile)
 	if err != nil {
 		return nil, err
@@ -132,6 +128,4 @@ func DotSQLLoadFile(sqlFile string) (*DotSQLSet, error) {
 }
 
 // DotSQLLoadString imports SQL queries from the string.
-func DotSQLLoadString(sql string) (*DotSQLSet, error) {
-	return DotSQLLoad(bytes.NewBufferString(sql))
-}
+func DotSQLLoadString(s string) (*DotSQL, error) { return DotSQLLoad(bytes.NewBufferString(s)) }

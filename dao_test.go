@@ -26,7 +26,7 @@ type personDao struct {
 	Delete      func(string) int               `sql:"delete from person where id=:1"`
 	GetAge      func(string) struct{ Age int } `sql:"select age from person where id=:1"`
 
-	GetAgeX func(string) (struct{ Age int }, error) `sql:"select age from person where xid=:1"`
+	GetAgeE func(string) (struct{ Age int }, error) `sql:"select age from person where xid=:1"`
 
 	Err error // 添加这个字段，可以用来单独接收error信息
 }
@@ -60,7 +60,7 @@ func TestDao(t *testing.T) {
 	that.Equal(struct{ Age int }{Age: 200}, dao.GetAge("200"))
 
 	that.Nil(dao.Err)
-	ageX, err := dao.GetAgeX("200")
+	ageX, err := dao.GetAgeE("200")
 	that.Error(err)
 	that.Zero(ageX)
 	that.Error(dao.Err)

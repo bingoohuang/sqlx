@@ -29,7 +29,17 @@ func replaceQuestionMark4Postgres(s string) string {
 	return r
 }
 
-var errorInterface = reflect.TypeOf((*error)(nil)).Elem() // nolint gochecknoglobals
+// 参考 https://github.com/uber-go/dig/blob/master/types.go
+// nolint gochecknoglobals
+var (
+	_errType = reflect.TypeOf((*error)(nil)).Elem()
+)
+
+// ImplError tells t whether it implements error interface.
+func ImplError(t reflect.Type) bool { return t.Implements(_errType) }
+
+// IsError tells t whether it is error type exactly.
+func IsError(t reflect.Type) bool { return t == _errType }
 
 type errorSetter func(error)
 
@@ -81,7 +91,7 @@ func createErrorSetter(v reflect.Value) func(error) {
 		fv := v.Field(i)
 		f := v.Type().Field(i)
 
-		if f.PkgPath == "" /* exportable */ && f.Type == errorInterface {
+		if f.PkgPath == "" /* exportable */ && IsError(f.Type) {
 			return func(err error) {
 				if fv.IsNil() && err == nil {
 					return
@@ -103,7 +113,7 @@ func (p *sqlParsed) createFn(f reflect.StructField, db *sql.DB, v reflect.Value,
 	numIn := f.Type.NumIn()
 	numOut := f.Type.NumOut()
 
-	lastOutError := numOut > 0 && f.Type.Out(numOut-1) == errorInterface // nolint gomnd
+	lastOutError := numOut > 0 && IsError(f.Type.Out(numOut-1)) // nolint gomnd
 	if lastOutError {
 		numOut--
 	}

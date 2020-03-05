@@ -160,12 +160,11 @@ func CreateDao(driverName string, db *sql.DB, dao interface{}, createDaoOpts ...
 		}
 
 		p, err := parseSQL(f.Name, sqlStmt)
-		p.opt = option
-
 		if err != nil {
 			return fmt.Errorf("failed to parse sql %v error %w", sqlStmt, err)
 		}
 
+		p.opt = option
 		p.SQL = sqlFilter(p.SQL)
 		numIn := f.Type.NumIn()
 

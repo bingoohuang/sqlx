@@ -166,7 +166,7 @@ create table person(id varchar(100), age int);
 insert into person(id, age) values(:id, :age);
 
 -- name: ListAll delimiter: /
-select id, age from person order by id/
+/select id, age from person order by id//
 `
 
 func TestDaoWithDotSQLString(t *testing.T) {

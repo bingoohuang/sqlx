@@ -88,10 +88,13 @@ func (s *DotSQLScanner) appendQueryLine() {
 		delimiter = ";"
 	}
 
-	sql := current.Content
-	sql = strings.TrimSpace(sql)
-	sql = strings.TrimSuffix(sql, delimiter)
-	sql = strings.TrimSpace(sql)
+	sql := strings.TrimSpace(current.Content)
+
+	for strings.HasPrefix(sql, delimiter) || strings.HasSuffix(sql, delimiter) {
+		sql = strings.TrimPrefix(sql, delimiter)
+		sql = strings.TrimSuffix(sql, delimiter)
+		sql = strings.TrimSpace(sql)
+	}
 
 	current.Content = sql
 

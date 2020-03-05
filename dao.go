@@ -1,6 +1,7 @@
 package sqlmore
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -8,6 +9,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/bingoohuang/goreflect/defaults"
 
 	"github.com/bingoohuang/strcase"
 )
@@ -43,18 +46,57 @@ func IsError(t reflect.Type) bool { return t == _errType }
 
 type errorSetter func(error)
 
-// CreateDao fulfils the dao (should be pointer)
-func CreateDao(driverName string, db *sql.DB, dao interface{}) error {
-	sqlFilter := func(s string) string {
-		if driverName == "postgres" {
-			return replaceQuestionMark4Postgres(s)
-		}
+// CreateDaoOpt defines the options for CreateDao
+type CreateDaoOpt struct {
+	Error        *error
+	Ctx          context.Context
+	QueryMaxRows int `default:"-1"`
+}
 
-		return s
+// CreateDaoOpter defines the option pattern interface for CreateDaoOpt.
+type CreateDaoOpter interface {
+	ApplyCreateOpt(*CreateDaoOpt)
+}
+
+// CreateDaoOptFn defines the func prototype to option applying.
+type CreateDaoOptFn func(*CreateDaoOpt)
+
+// ApplyCreateOpt applies the option.
+func (c CreateDaoOptFn) ApplyCreateOpt(opt *CreateDaoOpt) { c(opt) }
+
+// WithError specifies the err pointer to receive error.
+func WithError(err *error) CreateDaoOpter {
+	return CreateDaoOptFn(func(opt *CreateDaoOpt) { opt.Error = err })
+}
+
+// WithContext specifies the context.Context to db execution processes.
+func WithContext(ctx context.Context) CreateDaoOpter {
+	return CreateDaoOptFn(func(opt *CreateDaoOpt) { opt.Ctx = ctx })
+}
+
+// WithQueryMaxRows specifies the max rows to be fetched when execute query.
+func WithQueryMaxRows(maxRows int) CreateDaoOpter {
+	return CreateDaoOptFn(func(opt *CreateDaoOpt) { opt.QueryMaxRows = maxRows })
+}
+
+// CreateDao fulfils the dao (should be pointer)
+func CreateDao(driverName string, db *sql.DB, dao interface{}, createDaoOpts ...CreateDaoOpter) error {
+	option, err := applyCreateDaoOption(createDaoOpts)
+	if err != nil {
+		return err
+	}
+
+	sqlFilter := func(s string) string {
+		switch driverName {
+		case "postgres":
+			return replaceQuestionMark4Postgres(s)
+		default:
+			return s
+		}
 	}
 
 	v := reflect.Indirect(reflect.ValueOf(dao))
-	errSetter := createErrorSetter(v)
+	errSetter := createErrorSetter(v, option)
 
 	for i := 0; i < v.NumField(); i++ {
 		field := v.Field(i)
@@ -66,6 +108,7 @@ func CreateDao(driverName string, db *sql.DB, dao interface{}) error {
 
 		sqlStmt := f.Tag.Get("sql")
 		p, err := parseSQL(f.Name, sqlStmt)
+		p.opt = option
 
 		if err != nil {
 			return fmt.Errorf("failed to parse sql %v error %w", sqlStmt, err)
@@ -86,13 +129,34 @@ func CreateDao(driverName string, db *sql.DB, dao interface{}) error {
 	return nil
 }
 
-func createErrorSetter(v reflect.Value) func(error) {
+func applyCreateDaoOption(createDaoOpts []CreateDaoOpter) (*CreateDaoOpt, error) {
+	opt := &CreateDaoOpt{}
+	if err := defaults.Set(opt); err != nil {
+		return nil, fmt.Errorf("failed to set defaults for CreateDaoOpt error %w", err)
+	}
+
+	for _, v := range createDaoOpts {
+		v.ApplyCreateOpt(opt)
+	}
+
+	if opt.Ctx == nil {
+		opt.Ctx = context.Background()
+	}
+
+	return opt, nil
+}
+
+func createErrorSetter(v reflect.Value, option *CreateDaoOpt) func(error) {
 	for i := 0; i < v.NumField(); i++ {
 		fv := v.Field(i)
 		f := v.Type().Field(i)
 
 		if f.PkgPath == "" /* exportable */ && IsError(f.Type) {
 			return func(err error) {
+				if option.Error != nil {
+					*option.Error = err
+				}
+
 				if fv.IsNil() && err == nil {
 					return
 				}
@@ -106,7 +170,11 @@ func createErrorSetter(v reflect.Value) func(error) {
 		}
 	}
 
-	return func(error) {}
+	return func(err error) {
+		if option.Error != nil {
+			*option.Error = err
+		}
+	}
 }
 
 func (p *sqlParsed) createFn(f reflect.StructField, db *sql.DB, v reflect.Value, errSetter errorSetter) error {
@@ -200,9 +268,9 @@ func (b bindBy) String() string {
 		return "bySeq"
 	case byName:
 		return "byName"
+	default:
+		return "Unknown"
 	}
-
-	return "Unknown"
 }
 
 type sqlParsed struct {
@@ -212,6 +280,8 @@ type sqlParsed struct {
 	Vars    []string
 	MaxSeq  int
 	IsQuery bool
+
+	opt *CreateDaoOpt
 }
 
 func (p sqlParsed) isBindBy(by ...bindBy) bool {
@@ -308,7 +378,7 @@ func parseBindBy(vars []string) (bindBy bindBy, maxSeq int, err error) {
 
 func (p *sqlParsed) exec(db *sql.DB) ([]reflect.Value, error) {
 	p.logPrepare("(none)")
-	_, err := db.Exec(p.SQL)
+	_, err := db.ExecContext(p.opt.Ctx, p.SQL)
 
 	if err != nil {
 		return nil, fmt.Errorf("execute %s error %w", p.SQL, err)
@@ -342,12 +412,12 @@ func (p *sqlParsed) execByNamedArg0Ret1(db *sql.DB, bean reflect.Value) ([]refle
 		itemSize = bean.Len()
 	}
 
-	tx, err := db.Begin()
+	tx, err := db.BeginTx(p.opt.Ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin tx %w", err)
 	}
 
-	pr, err := tx.Prepare(p.SQL)
+	pr, err := tx.PrepareContext(p.opt.Ctx, p.SQL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare sql %s error %w", p.SQL, err)
 	}
@@ -361,7 +431,7 @@ func (p *sqlParsed) execByNamedArg0Ret1(db *sql.DB, bean reflect.Value) ([]refle
 	}
 
 	for ii := 0; ii < itemSize; ii++ {
-		if _, err := pr.Exec(vars[ii]...); err != nil {
+		if _, err := pr.ExecContext(p.opt.Ctx, vars[ii]...); err != nil {
 			return nil, fmt.Errorf("failed to execute %s error %w", p.SQL, err)
 		}
 	}
@@ -401,7 +471,7 @@ func (p *sqlParsed) execBySeqRet1(db *sql.DB, outType reflect.Type, args []refle
 	vars := p.makeVars(args)
 	p.logPrepare(vars)
 
-	result, err := db.Exec(p.SQL, vars...)
+	result, err := db.ExecContext(p.opt.Ctx, p.SQL, vars...)
 	if err != nil {
 		return nil, fmt.Errorf("execute %s error %w", p.SQL, err)
 	}
@@ -426,7 +496,7 @@ func (p *sqlParsed) queryBySeqRet1(db *sql.DB, outType reflect.Type, args []refl
 
 	p.logPrepare(vars)
 
-	rows, err := db.Query(p.SQL, vars...)
+	rows, err := db.QueryContext(p.opt.Ctx, p.SQL, vars...)
 	if err != nil || rows.Err() != nil {
 		if err == nil {
 			err = rows.Err()
@@ -442,9 +512,10 @@ func (p *sqlParsed) queryBySeqRet1(db *sql.DB, outType reflect.Type, args []refl
 		return nil, fmt.Errorf("get columns %s error %w", p.SQL, err)
 	}
 
+	maxRows := p.opt.QueryMaxRows
 	mapFields := p.createMapFields(columns, outType)
 
-	for ri := 0; rows.Next(); ri++ {
+	for ri := 0; rows.Next() && (maxRows <= 0 || ri < maxRows); ri++ {
 		pointers, out := resetDests(outType, mapFields)
 		if err := rows.Scan(pointers...); err != nil {
 			return nil, fmt.Errorf("scan rows %s error %w", p.SQL, err)

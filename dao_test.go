@@ -2,8 +2,10 @@
 package sqlmore_test
 
 import (
+	"context"
 	"database/sql"
 	"testing"
+	"time"
 
 	"github.com/bingoohuang/sqlmore"
 	"github.com/stretchr/testify/assert"
@@ -25,10 +27,6 @@ type personDao struct {
 	ListByID    func(string) []person          `sql:"select id, age from person where id=:1"`
 	Delete      func(string) int               `sql:"delete from person where id=:1"`
 	GetAge      func(string) struct{ Age int } `sql:"select age from person where id=:1"`
-
-	GetAgeE func(string) (struct{ Age int }, error) `sql:"select age from person where xid=:1"`
-
-	Err error // 添加这个字段，可以用来单独接收error信息
 }
 
 func TestDao(t *testing.T) {
@@ -59,15 +57,6 @@ func TestDao(t *testing.T) {
 	// 匿名结构
 	that.Equal(struct{ Age int }{Age: 200}, dao.GetAge("200"))
 
-	that.Nil(dao.Err)
-	ageX, err := dao.GetAgeE("200")
-	that.Error(err)
-	that.Zero(ageX)
-	that.Error(dao.Err)
-
-	// 条件列表
-	that.Equal([]person{{"200", 200}}, dao.ListByID("200"))
-	that.Nil(dao.Err) // 验证Err字段是否重置
 }
 
 func openDB(t *testing.T) *sql.DB {
@@ -75,4 +64,65 @@ func openDB(t *testing.T) *sql.DB {
 	db, err := sql.Open("sqlite3", ":memory:")
 	assert.Nil(t, err)
 	return db
+}
+
+// personDao2 定义对person表操作的所有方法
+type personDao2 struct {
+	CreateTable func()          `sql:"create table person(id varchar(100), age int)"`
+	AddAll      func(...person) `sql:"insert into person(id, age) values(:id, :age)"`
+
+	GetAgeE func(string) (struct{ Age int }, error) `sql:"select age from person where xid=:1"`
+	GetAgeX func(string) person                     `sql:"select age from person where xid=:1"`
+
+	Err error // 添加这个字段，可以用来单独接收error信息
+
+	ListAll func() []person `sql:"select id, age from person"`
+}
+
+func TestDaoWithError(t *testing.T) {
+	that := assert.New(t)
+
+	// 生成DAO，自动创建dao结构体中的函数字段
+	dao := &personDao2{}
+
+	var err error
+
+	that.Nil(sqlmore.CreateDao("sqlite3", openDB(t), dao, sqlmore.WithError(&err)))
+
+	dao.CreateTable()
+
+	that.Nil(dao.Err)
+	ageX, err := dao.GetAgeE("200")
+	that.Error(err)
+	that.Zero(ageX)
+	that.Error(dao.Err)
+
+	// 条件列表
+	dao.AddAll(person{"200", 200})
+	that.Nil(dao.Err) // 验证Err字段是否重置
+
+	that.Zero(dao.GetAgeX("100"))
+	that.Error(err)
+}
+
+func TestDaoWithContext(t *testing.T) {
+	that := assert.New(t)
+
+	// 生成DAO，自动创建dao结构体中的函数字段
+	dao := &personDao2{}
+	// Pass a context with a timeout to tell a blocking function that it
+	// should abandon its work after the timeout elapses.
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	that.Nil(sqlmore.CreateDao("sqlite3", openDB(t), dao,
+		sqlmore.WithContext(ctx), sqlmore.WithQueryMaxRows(1)))
+
+	dao.CreateTable()
+
+	// 多值插入
+	dao.AddAll(person{"300", 300}, person{"400", 400})
+
+	peoples := dao.ListAll()
+	that.Len(peoples, 1)
 }

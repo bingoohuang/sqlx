@@ -22,6 +22,8 @@ github.com/beorn7/perks v1.0.0/go.mod h1:KWe93zE9D1o94FZ5RNwFwVgaQK1VOXiVxmqh+Ce
 github.com/bingoohuang/gonet v0.0.0-20190716021716-fd516efe8b31/go.mod h1:lSe5gMXAiQESg/xTshM6sByKvDkMGdDffZSXt0d64JI=
 github.com/bingoohuang/goreflect v0.0.0-20200220033105-a0faf449f649 h1:Y4Un87LBj9Aae4MlLTWH/aGzhrwgk4pYlMduw8gNmNw=
 github.com/bingoohuang/goreflect v0.0.0-20200220033105-a0faf449f649/go.mod h1:Jkc9aAuGnMb+GnhLEVtdDnyIZ6Lh6APIITuY+X0HQRU=
+github.com/bingoohuang/goreflect v0.0.0-20200223155957-7c0a29c4a937 h1:4RqymbW5E/ZbHPTIxNij2JSgJ0W60jxVqtdOwSBbHEg=
+github.com/bingoohuang/goreflect v0.0.0-20200223155957-7c0a29c4a937/go.mod h1:Jkc9aAuGnMb+GnhLEVtdDnyIZ6Lh6APIITuY+X0HQRU=
 github.com/bingoohuang/gou v0.0.0-20200225004418-9b3655665c46 h1:18kysBxDTlkUYNhzPgJ7o4T8OnZws9WzVPprRgZRcj4=
 github.com/bingoohuang/gou v0.0.0-20200225004418-9b3655665c46/go.mod h1:lfM/iBkZzlmnl23C+mpqiXAgC6npikzZkKVfNAdC+o4=
 github.com/bingoohuang/shellwords v0.0.0-20200303142623-5c675e52d3e1 h1:ZOxJ0X7A0Y0hJHVuPfERGZO34N6DUFZj4aH2Kw1Y1J4=

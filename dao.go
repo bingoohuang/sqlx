@@ -13,6 +13,11 @@ import (
 
 // CreateDao fulfils the dao (should be pointer)
 func CreateDao(driverName string, db *sql.DB, dao interface{}, createDaoOpts ...CreateDaoOpter) error {
+	daov := reflect.ValueOf(dao)
+	if daov.Kind() != reflect.Ptr || daov.Elem().Kind() != reflect.Struct {
+		return fmt.Errorf("dao should be pointer to struct")
+	}
+
 	option, err := applyCreateDaoOption(createDaoOpts)
 	if err != nil {
 		return err
@@ -27,7 +32,7 @@ func CreateDao(driverName string, db *sql.DB, dao interface{}, createDaoOpts ...
 		}
 	}
 
-	v := reflect.Indirect(reflect.ValueOf(dao))
+	v := reflect.Indirect(daov)
 	errSetter := createErrorSetter(v, option)
 
 	for i := 0; i < v.NumField(); i++ {

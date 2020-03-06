@@ -1,6 +1,12 @@
 package sqlx
 
-import "context"
+import (
+	"context"
+	"fmt"
+	"reflect"
+
+	"github.com/bingoohuang/goreflect/defaults"
+)
 
 type errorSetter func(error)
 
@@ -80,3 +86,51 @@ type RowScanInterceptorFn func(rowIndex int, v interface{}) (bool, error)
 
 // After is revoked after after a row scanning.
 func (r RowScanInterceptorFn) After(rowIndex int, v interface{}) (bool, error) { return r(rowIndex, v) }
+
+func applyCreateDaoOption(createDaoOpts []CreateDaoOpter) (*CreateDaoOpt, error) {
+	opt := &CreateDaoOpt{}
+	if err := defaults.Set(opt); err != nil {
+		return nil, fmt.Errorf("failed to set defaults for CreateDaoOpt error %w", err)
+	}
+
+	for _, v := range createDaoOpts {
+		v.ApplyCreateOpt(opt)
+	}
+
+	if opt.Ctx == nil {
+		opt.Ctx = context.Background()
+	}
+
+	return opt, nil
+}
+
+func createErrorSetter(v reflect.Value, option *CreateDaoOpt) func(error) {
+	for i := 0; i < v.NumField(); i++ {
+		fv := v.Field(i)
+		f := v.Type().Field(i)
+
+		if f.PkgPath == "" /* exportable */ && IsError(f.Type) {
+			return func(err error) {
+				if option.Error != nil {
+					*option.Error = err
+				}
+
+				if fv.IsNil() && err == nil {
+					return
+				}
+
+				if err == nil {
+					fv.Set(reflect.Zero(f.Type))
+				} else {
+					fv.Set(reflect.ValueOf(err))
+				}
+			}
+		}
+	}
+
+	return func(err error) {
+		if option.Error != nil {
+			*option.Error = err
+		}
+	}
+}

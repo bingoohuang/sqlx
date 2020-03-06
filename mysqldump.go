@@ -1,4 +1,4 @@
-package sqlmore
+package sqlx
 
 // from https://github.com/JamesStewy/go-mysqldump
 

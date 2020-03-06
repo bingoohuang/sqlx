@@ -1,5 +1,5 @@
 // nolint gomnd
-package sqlmore
+package sqlx
 
 import (
 	"os"

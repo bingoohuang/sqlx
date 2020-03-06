@@ -1,4 +1,4 @@
-package sqlmore
+package sqlx
 
 import (
 	"context"
@@ -83,8 +83,8 @@ func WithQueryMaxRows(maxRows int) CreateDaoOpter {
 	return CreateDaoOptFn(func(opt *CreateDaoOpt) { opt.QueryMaxRows = maxRows })
 }
 
-// WithDotSQLFile imports SQL queries from the file.
-func WithDotSQLFile(sqlFile string) CreateDaoOpter {
+// WithSQLFile imports SQL queries from the file.
+func WithSQLFile(sqlFile string) CreateDaoOpter {
 	return CreateDaoOptFn(func(opt *CreateDaoOpt) {
 		ds, err := DotSQLLoadFile(sqlFile)
 		if err != nil {
@@ -95,8 +95,8 @@ func WithDotSQLFile(sqlFile string) CreateDaoOpter {
 	})
 }
 
-// WithDotSQLString imports SQL queries from the string.
-func WithDotSQLString(s string) CreateDaoOpter {
+// WithSQLStr imports SQL queries from the string.
+func WithSQLStr(s string) CreateDaoOpter {
 	return CreateDaoOptFn(func(opt *CreateDaoOpt) {
 		ds, err := DotSQLLoadString(s)
 		if err != nil {
@@ -243,7 +243,9 @@ func (p *sqlParsed) createFn(f reflect.StructField, db *sql.DB, v reflect.Value,
 	case numIn == 0 && numOut == 0:
 		fn = func([]reflect.Value) ([]reflect.Value, error) { return p.exec(db) }
 	case numIn == 1 && p.isBindBy(byName) && numOut == 0:
-		fn = func(args []reflect.Value) ([]reflect.Value, error) { return p.execByNamedArg0Ret1(db, args[0]) }
+		fn = func(args []reflect.Value) ([]reflect.Value, error) { return p.execByNamedArg1Ret0(db, args[0]) }
+	case p.isBindBy(bySeq, byAuto) && numOut == 0:
+		fn = func(args []reflect.Value) ([]reflect.Value, error) { return p.execBySeqArgsRet0(db, args) }
 	case p.IsQuery && p.isBindBy(bySeq, byAuto, byNone) && numOut == 1:
 		fn = func(args []reflect.Value) ([]reflect.Value, error) { return p.queryBySeqRet1(db, f.Type.Out(0), args) }
 	case !p.IsQuery && p.isBindBy(bySeq, byAuto) && numOut == 1:
@@ -457,7 +459,19 @@ func matchesField2Col(structType reflect.Type, field, col string) bool {
 	return strings.EqualFold(field, col) || strings.EqualFold(field, strcase.ToCamel(col))
 }
 
-func (p *sqlParsed) execByNamedArg0Ret1(db *sql.DB, bean reflect.Value) ([]reflect.Value, error) {
+func (p *sqlParsed) execBySeqArgsRet0(db *sql.DB, args []reflect.Value) ([]reflect.Value, error) {
+	vars := p.makeVars(args)
+	p.logPrepare(vars)
+
+	_, err := db.ExecContext(p.opt.Ctx, p.SQL, vars...)
+	if err != nil {
+		return nil, fmt.Errorf("execute %s error %w", p.SQL, err)
+	}
+
+	return []reflect.Value{}, nil
+}
+
+func (p *sqlParsed) execByNamedArg1Ret0(db *sql.DB, bean reflect.Value) ([]reflect.Value, error) {
 	beanType := bean.Type()
 	isBeanSlice := beanType.Kind() == reflect.Slice
 	item0 := bean
@@ -483,7 +497,7 @@ func (p *sqlParsed) execByNamedArg0Ret1(db *sql.DB, bean reflect.Value) ([]refle
 		return nil, fmt.Errorf("failed to prepare sql %s error %w", p.SQL, err)
 	}
 
-	vars := p.createVars(itemSize, item0, bean, beanType)
+	vars := p.createNamedVars(itemSize, item0, bean, beanType)
 
 	if isBeanSlice {
 		p.logPrepare(vars)
@@ -504,7 +518,7 @@ func (p *sqlParsed) execByNamedArg0Ret1(db *sql.DB, bean reflect.Value) ([]refle
 	return []reflect.Value{}, nil
 }
 
-func (p *sqlParsed) createVars(beanSize int, item, bean reflect.Value, itemType reflect.Type) [][]interface{} {
+func (p *sqlParsed) createNamedVars(beanSize int, item, bean reflect.Value, itemType reflect.Type) [][]interface{} {
 	vars := make([][]interface{}, beanSize)
 
 	for ii := 0; ii < beanSize; ii++ {
@@ -630,10 +644,86 @@ func (p *sqlParsed) doQuery(db *sql.DB, args []reflect.Value) (*sql.Rows, error)
 func fillFields(mapFields []*reflect.StructField, out reflect.Value, pointers []interface{}) {
 	for i, field := range mapFields {
 		if field != nil {
-			f := out.FieldByName(field.Name)
-			f.Set(reflect.Indirect(reflect.ValueOf(pointers[i])))
+			out.FieldByName(field.Name).Set(pointers[i].(*NullAny).getVal())
 		}
 	}
+}
+
+// NullAny represents any that may be null.
+// NullAny implements the Scanner interface so it can be used as a scan destination:
+type NullAny struct {
+	Type reflect.Type
+	Val  reflect.Value
+}
+
+// Scan assigns a value from a database driver.
+//
+// The src value will be of one of the following types:
+//
+//    int64
+//    float64
+//    bool
+//    []byte
+//    string
+//    time.Time
+//    nil - for NULL values
+//
+// An error should be returned if the value cannot be stored
+// without loss of information.
+//
+// Reference types such as []byte are only valid until the next call to Scan
+// and should not be retained. Their underlying memory is owned by the driver.
+// If retention is necessary, copy their values before the next call to Scan.
+func (n *NullAny) Scan(value interface{}) error {
+	if n.Type == nil || value == nil {
+		return nil
+	}
+
+	switch n.Type.Kind() {
+	case reflect.String:
+		sn := &sql.NullString{}
+		if err := sn.Scan(value); err != nil {
+			return err
+		}
+
+		n.Val = reflect.ValueOf(sn.String)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32:
+		sn := &sql.NullInt32{}
+		if err := sn.Scan(value); err != nil {
+			return err
+		}
+
+		n.Val = reflect.ValueOf(sn.Int32).Convert(n.Type)
+	case reflect.Bool:
+		sn := &sql.NullBool{}
+		if err := sn.Scan(value); err != nil {
+			return err
+		}
+
+		n.Val = reflect.ValueOf(sn.Bool)
+	default:
+		sn := &sql.NullString{}
+		if err := sn.Scan(value); err != nil {
+			return err
+		}
+
+		n.Val = reflect.ValueOf(sn.String).Convert(n.Type)
+	}
+
+	return nil
+}
+
+func (n *NullAny) getVal() reflect.Value {
+	if n.Type == nil {
+		return reflect.Value{}
+	}
+
+	if n.Val.IsValid() {
+		return n.Val
+	}
+
+	return reflect.New(n.Type).Elem()
 }
 
 func resetDests(outType reflect.Type, mapFields []*reflect.StructField) ([]interface{}, reflect.Value) {
@@ -642,9 +732,9 @@ func resetDests(outType reflect.Type, mapFields []*reflect.StructField) ([]inter
 
 	for i, fv := range mapFields {
 		if fv != nil {
-			pointers[i] = reflect.New(fv.Type).Interface()
+			pointers[i] = &NullAny{Type: fv.Type}
 		} else {
-			pointers[i] = &sql.NullString{}
+			pointers[i] = &NullAny{Type: nil}
 		}
 	}
 

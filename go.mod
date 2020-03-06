@@ -1,4 +1,4 @@
-module github.com/bingoohuang/sqlmore
+module github.com/bingoohuang/sqlx
 
 go 1.12
 

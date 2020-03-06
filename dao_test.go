@@ -1,5 +1,5 @@
 // nolint gomnd
-package sqlmore_test
+package sqlx_test
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bingoohuang/sqlmore"
+	"github.com/bingoohuang/sqlx"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -34,7 +34,7 @@ func TestDao(t *testing.T) {
 
 	// 生成DAO，自动创建dao结构体中的函数字段
 	dao := &personDao{}
-	that.Nil(sqlmore.CreateDao("sqlite3", openDB(t), dao))
+	that.Nil(sqlx.CreateDao("sqlite3", openDB(t), dao))
 
 	// 建表
 	dao.CreateTable()
@@ -87,7 +87,7 @@ func TestDaoWithError(t *testing.T) {
 
 	var err error
 
-	that.Nil(sqlmore.CreateDao("sqlite3", openDB(t), dao, sqlmore.WithError(&err)))
+	that.Nil(sqlx.CreateDao("sqlite3", openDB(t), dao, sqlx.WithError(&err)))
 
 	dao.CreateTable()
 
@@ -115,8 +115,8 @@ func TestDaoWithContext(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	that.Nil(sqlmore.CreateDao("sqlite3", openDB(t), dao,
-		sqlmore.WithContext(ctx), sqlmore.WithQueryMaxRows(1)))
+	that.Nil(sqlx.CreateDao("sqlite3", openDB(t), dao,
+		sqlx.WithContext(ctx), sqlx.WithQueryMaxRows(1)))
 
 	dao.CreateTable()
 
@@ -132,14 +132,13 @@ func TestDaoWithRowScanInterceptor(t *testing.T) {
 
 	// 生成DAO，自动创建dao结构体中的函数字段
 	dao := &personDao2{}
-
 	p := person{}
+	f := sqlx.RowScanInterceptorFn(func(rowIndex int, v interface{}) (bool, error) {
+		p = v.(person)
+		return false, nil
+	})
 
-	that.Nil(sqlmore.CreateDao("sqlite3", openDB(t), dao,
-		sqlmore.WithRowScanInterceptor(sqlmore.RowScanInterceptorFn(func(rowIndex int, v interface{}) (bool, error) {
-			p = v.(person)
-			return false, nil
-		}))))
+	that.Nil(sqlx.CreateDao("sqlite3", openDB(t), dao, sqlx.WithRowScanInterceptor(f)))
 
 	dao.CreateTable()
 
@@ -175,7 +174,7 @@ func TestDaoWithDotSQLString(t *testing.T) {
 	// 生成DAO，自动创建dao结构体中的函数字段
 	dao := &personDao3{}
 
-	that.Nil(sqlmore.CreateDao("sqlite3", openDB(t), dao, sqlmore.WithDotSQLString(dotSQL)))
+	that.Nil(sqlx.CreateDao("sqlite3", openDB(t), dao, sqlx.WithSQLStr(dotSQL)))
 
 	dao.CreateTable()
 
@@ -191,9 +190,7 @@ func TestDaoWithDotSQLFile(t *testing.T) {
 
 	// 生成DAO，自动创建dao结构体中的函数字段
 	dao := &personDao3{}
-
-	that.Nil(sqlmore.CreateDao("sqlite3", openDB(t), dao,
-		sqlmore.WithDotSQLFile(`testdata/dao3.sql`)))
+	that.Nil(sqlx.CreateDao("sqlite3", openDB(t), dao, sqlx.WithSQLFile(`testdata/d3.sql`)))
 
 	dao.CreateTable()
 
@@ -202,4 +199,41 @@ func TestDaoWithDotSQLFile(t *testing.T) {
 
 	// 列表
 	that.Equal([]person{{"300", 300}, person{"400", 400}}, dao.ListAll())
+}
+
+// person 结构体，对应到person表字段
+type person4 struct {
+	ID  sql.NullString
+	Age int
+}
+
+// person 结构体，对应到person表字段
+type person5 struct {
+	ID    string
+	Age   int
+	Other string
+}
+
+// personDao4 定义对person表操作的所有方法
+type personDao4 struct {
+	CreateTable func()            `sql:"create table person(id varchar(100), age int, addr varchar(10))"`
+	AddID       func(int)         `sql:"insert into person(age, addr) values(:1, 'zags')"`
+	FindByAge1  func(int) person4 `sql:"select id, age, addr from person where age = :1"`
+	FindByAge2  func(int) person5 `sql:"select id, age, addr from person where age = :1"`
+}
+
+func TestNullString(t *testing.T) {
+	that := assert.New(t)
+
+	// 生成DAO，自动创建dao结构体中的函数字段
+	dao := &personDao4{}
+	that.Nil(sqlx.CreateDao("sqlite3", openDB(t), dao))
+
+	dao.CreateTable()
+	dao.AddID(100)
+	p1 := dao.FindByAge1(100)
+	that.Equal(person4{ID: sql.NullString{Valid: false}, Age: 100}, p1)
+
+	p2 := dao.FindByAge2(100)
+	that.Equal(person5{ID: "", Age: 100}, p2)
 }

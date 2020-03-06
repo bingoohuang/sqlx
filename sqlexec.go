@@ -1,4 +1,4 @@
-package sqlmore
+package sqlx
 
 // refer https://yougg.github.io/2017/08/24/用go语言写一个简单的mysql客户端/
 import (

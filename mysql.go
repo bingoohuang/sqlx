@@ -1,4 +1,4 @@
-package sqlmore
+package sqlx
 
 import (
 	"strings"

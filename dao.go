@@ -94,9 +94,11 @@ func (r *sqlRun) createFn(f reflect.StructField, v reflect.Value, errSetter erro
 	case r.isBindBy(bySeq, byAuto) && numOut == 0:
 		fn = r.execBySeqArgsRet0
 	case r.IsQuery && r.isBindBy(bySeq, byAuto, byNone) && numOut == 1:
-		fn = func(args []reflect.Value) ([]reflect.Value, error) { return r.queryBySeqRet1(f.Type.Out(0), args) }
+		out := f.Type.Out(0)
+		fn = func(args []reflect.Value) ([]reflect.Value, error) { return r.queryBySeqRet1(out, args) }
 	case !r.IsQuery && r.isBindBy(bySeq, byAuto) && numOut == 1:
-		fn = func(args []reflect.Value) ([]reflect.Value, error) { return r.execBySeqRet1(f.Type.Out(0), args) }
+		out := f.Type.Out(0)
+		fn = func(args []reflect.Value) ([]reflect.Value, error) { return r.execBySeqRet1(out, args) }
 	default:
 		err := fmt.Errorf("unsupportd func %v", f.Type)
 		r.logError(err)

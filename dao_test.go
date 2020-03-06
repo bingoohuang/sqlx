@@ -212,11 +212,12 @@ type person5 struct {
 	ID    string
 	Age   int
 	Other string
+	Addr  sql.NullString
 }
 
 // personDao4 定义对person表操作的所有方法
 type personDao4 struct {
-	CreateTable func()            `sql:"create table person(id varchar(100), age int, addr varchar(10))"`
+	CreateTable func()            `sql:"create table person(id varchar(100), age int, addr varchar(10) default 'bj')"`
 	AddID       func(int)         `sql:"insert into person(age, addr) values(:1, 'zags')"`
 	FindByAge1  func(int) person4 `sql:"select id, age, addr from person where age = :1"`
 	FindByAge2  func(int) person5 `sql:"select id, age, addr from person where age = :1"`
@@ -235,5 +236,5 @@ func TestNullString(t *testing.T) {
 	that.Equal(person4{ID: sql.NullString{Valid: false}, Age: 100}, p1)
 
 	p2 := dao.FindByAge2(100)
-	that.Equal(person5{ID: "", Age: 100}, p2)
+	that.Equal(person5{ID: "", Age: 100, Addr: sql.NullString{String: "zags", Valid: true}}, p2)
 }

@@ -15,114 +15,6 @@ import (
 	"github.com/bingoohuang/strcase"
 )
 
-func replaceQuestionMark4Postgres(s string) string {
-	r := ""
-
-	for seq := 1; ; seq++ {
-		pos := strings.Index(s, "?")
-		if pos < 0 {
-			r += s
-			break
-		}
-
-		r += s[0:pos] + "$" + strconv.Itoa(seq)
-		s = s[pos+1:]
-	}
-
-	return r
-}
-
-// 参考 https://github.com/uber-go/dig/blob/master/types.go
-// nolint gochecknoglobals
-var (
-	_errType = reflect.TypeOf((*error)(nil)).Elem()
-)
-
-// ImplError tells t whether it implements error interface.
-func ImplError(t reflect.Type) bool { return t.Implements(_errType) }
-
-// IsError tells t whether it is error type exactly.
-func IsError(t reflect.Type) bool { return t == _errType }
-
-type errorSetter func(error)
-
-// CreateDaoOpt defines the options for CreateDao
-type CreateDaoOpt struct {
-	Error        *error
-	Ctx          context.Context
-	QueryMaxRows int `default:"-1"`
-
-	RowScanInterceptor RowScanInterceptor
-
-	DotSQL *DotSQL
-}
-
-// CreateDaoOpter defines the option pattern interface for CreateDaoOpt.
-type CreateDaoOpter interface {
-	ApplyCreateOpt(*CreateDaoOpt)
-}
-
-// CreateDaoOptFn defines the func prototype to option applying.
-type CreateDaoOptFn func(*CreateDaoOpt)
-
-// ApplyCreateOpt applies the option.
-func (c CreateDaoOptFn) ApplyCreateOpt(opt *CreateDaoOpt) { c(opt) }
-
-// WithError specifies the err pointer to receive error.
-func WithError(err *error) CreateDaoOpter {
-	return CreateDaoOptFn(func(opt *CreateDaoOpt) { opt.Error = err })
-}
-
-// WithContext specifies the context.Context to db execution processes.
-func WithContext(ctx context.Context) CreateDaoOpter {
-	return CreateDaoOptFn(func(opt *CreateDaoOpt) { opt.Ctx = ctx })
-}
-
-// WithQueryMaxRows specifies the max rows to be fetched when execute query.
-func WithQueryMaxRows(maxRows int) CreateDaoOpter {
-	return CreateDaoOptFn(func(opt *CreateDaoOpt) { opt.QueryMaxRows = maxRows })
-}
-
-// WithSQLFile imports SQL queries from the file.
-func WithSQLFile(sqlFile string) CreateDaoOpter {
-	return CreateDaoOptFn(func(opt *CreateDaoOpt) {
-		ds, err := DotSQLLoadFile(sqlFile)
-		if err != nil {
-			panic(err)
-		}
-
-		opt.DotSQL = ds
-	})
-}
-
-// WithSQLStr imports SQL queries from the string.
-func WithSQLStr(s string) CreateDaoOpter {
-	return CreateDaoOptFn(func(opt *CreateDaoOpt) {
-		ds, err := DotSQLLoadString(s)
-		if err != nil {
-			panic(err)
-		}
-
-		opt.DotSQL = ds
-	})
-}
-
-// WithRowScanInterceptor specifies the RowScanInterceptor after a row fetched.
-func WithRowScanInterceptor(interceptor RowScanInterceptor) CreateDaoOpter {
-	return CreateDaoOptFn(func(opt *CreateDaoOpt) { opt.RowScanInterceptor = interceptor })
-}
-
-// RowScanInterceptor defines the interceptor after a row scanning.
-type RowScanInterceptor interface {
-	After(rowIndex int, v interface{}) (bool, error)
-}
-
-// RowScanInterceptorFn defines the interceptor function after a row scanning.
-type RowScanInterceptorFn func(rowIndex int, v interface{}) (bool, error)
-
-// After is revoked after after a row scanning.
-func (r RowScanInterceptorFn) After(rowIndex int, v interface{}) (bool, error) { return r(rowIndex, v) }
-
 // CreateDao fulfils the dao (should be pointer)
 func CreateDao(driverName string, db *sql.DB, dao interface{}, createDaoOpts ...CreateDaoOpter) error {
 	option, err := applyCreateDaoOption(createDaoOpts)
@@ -472,17 +364,15 @@ func (p *sqlParsed) execBySeqArgsRet0(db *sql.DB, args []reflect.Value) ([]refle
 }
 
 func (p *sqlParsed) execByNamedArg1Ret0(db *sql.DB, bean reflect.Value) ([]reflect.Value, error) {
-	beanType := bean.Type()
-	isBeanSlice := beanType.Kind() == reflect.Slice
 	item0 := bean
 	itemSize := 1
+	isBeanSlice := bean.Type().Kind() == reflect.Slice
 
 	if isBeanSlice {
 		if bean.IsNil() || bean.Len() == 0 {
 			return []reflect.Value{}, nil
 		}
 
-		beanType = beanType.Elem()
 		item0 = bean.Index(0)
 		itemSize = bean.Len()
 	}
@@ -497,7 +387,7 @@ func (p *sqlParsed) execByNamedArg1Ret0(db *sql.DB, bean reflect.Value) ([]refle
 		return nil, fmt.Errorf("failed to prepare sql %s error %w", p.SQL, err)
 	}
 
-	vars := p.createNamedVars(itemSize, item0, bean, beanType)
+	vars := p.createNamedVars(itemSize, item0, bean)
 
 	if isBeanSlice {
 		p.logPrepare(vars)
@@ -518,7 +408,9 @@ func (p *sqlParsed) execByNamedArg1Ret0(db *sql.DB, bean reflect.Value) ([]refle
 	return []reflect.Value{}, nil
 }
 
-func (p *sqlParsed) createNamedVars(beanSize int, item, bean reflect.Value, itemType reflect.Type) [][]interface{} {
+func (p *sqlParsed) createNamedVars(beanSize int, item0, bean reflect.Value) [][]interface{} {
+	item := item0
+	itemType := reflect.TypeOf(item0)
 	vars := make([][]interface{}, beanSize)
 
 	for ii := 0; ii < beanSize; ii++ {
@@ -641,104 +533,37 @@ func (p *sqlParsed) doQuery(db *sql.DB, args []reflect.Value) (*sql.Rows, error)
 	return rows, nil
 }
 
-func fillFields(mapFields []*reflect.StructField, out reflect.Value, pointers []interface{}) {
-	for i, field := range mapFields {
-		if field != nil {
-			out.FieldByName(field.Name).Set(pointers[i].(*NullAny).getVal())
-		}
-	}
-}
-
-// NullAny represents any that may be null.
-// NullAny implements the Scanner interface so it can be used as a scan destination:
-type NullAny struct {
-	Type reflect.Type
-	Val  reflect.Value
-}
-
-// Scan assigns a value from a database driver.
-//
-// The src value will be of one of the following types:
-//
-//    int64
-//    float64
-//    bool
-//    []byte
-//    string
-//    time.Time
-//    nil - for NULL values
-//
-// An error should be returned if the value cannot be stored
-// without loss of information.
-//
-// Reference types such as []byte are only valid until the next call to Scan
-// and should not be retained. Their underlying memory is owned by the driver.
-// If retention is necessary, copy their values before the next call to Scan.
-func (n *NullAny) Scan(value interface{}) error {
-	if n.Type == nil || value == nil {
-		return nil
-	}
-
-	switch n.Type.Kind() {
-	case reflect.String:
-		sn := &sql.NullString{}
-		if err := sn.Scan(value); err != nil {
-			return err
-		}
-
-		n.Val = reflect.ValueOf(sn.String)
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32:
-		sn := &sql.NullInt32{}
-		if err := sn.Scan(value); err != nil {
-			return err
-		}
-
-		n.Val = reflect.ValueOf(sn.Int32).Convert(n.Type)
-	case reflect.Bool:
-		sn := &sql.NullBool{}
-		if err := sn.Scan(value); err != nil {
-			return err
-		}
-
-		n.Val = reflect.ValueOf(sn.Bool)
-	default:
-		sn := &sql.NullString{}
-		if err := sn.Scan(value); err != nil {
-			return err
-		}
-
-		n.Val = reflect.ValueOf(sn.String).Convert(n.Type)
-	}
-
-	return nil
-}
-
-func (n *NullAny) getVal() reflect.Value {
-	if n.Type == nil {
-		return reflect.Value{}
-	}
-
-	if n.Val.IsValid() {
-		return n.Val
-	}
-
-	return reflect.New(n.Type).Elem()
-}
-
 func resetDests(outType reflect.Type, mapFields []*reflect.StructField) ([]interface{}, reflect.Value) {
 	pointers := make([]interface{}, len(mapFields))
 	out := reflect.Indirect(reflect.New(outType))
 
 	for i, fv := range mapFields {
-		if fv != nil {
-			pointers[i] = &NullAny{Type: fv.Type}
-		} else {
+		if fv == nil {
 			pointers[i] = &NullAny{Type: nil}
+			continue
+		}
+
+		if ImplSQLScanner(fv.Type) {
+			pointers[i] = reflect.New(fv.Type).Interface()
+		} else {
+			pointers[i] = &NullAny{Type: fv.Type}
 		}
 	}
 
 	return pointers, out
+}
+func fillFields(mapFields []*reflect.StructField, out reflect.Value, pointers []interface{}) {
+	for i, field := range mapFields {
+		if field != nil {
+			f := out.FieldByName(field.Name)
+
+			if p, ok := pointers[i].(*NullAny); ok {
+				f.Set(p.getVal())
+			} else {
+				f.Set(reflect.ValueOf(pointers[i]).Elem())
+			}
+		}
+	}
 }
 
 func (p *sqlParsed) createMapFields(columns []string, outType reflect.Type) []*reflect.StructField {
@@ -787,4 +612,21 @@ func convertRowsAffected(result sql.Result, stmt string, outType reflect.Type) (
 	}
 
 	return reflect.Value{}, fmt.Errorf("unable to convert %v to type %v", rowsAffected, outType)
+}
+
+func replaceQuestionMark4Postgres(s string) string {
+	r := ""
+
+	for seq := 1; ; seq++ {
+		pos := strings.Index(s, "?")
+		if pos < 0 {
+			r += s
+			break
+		}
+
+		r += s[0:pos] + "$" + strconv.Itoa(seq)
+		s = s[pos+1:]
+	}
+
+	return r
 }

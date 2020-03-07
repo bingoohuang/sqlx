@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/bingoohuang/goreflect"
+
 	"github.com/bingoohuang/strcase"
 )
 
@@ -79,7 +81,7 @@ func (r *sqlRun) createFn(f reflect.StructField, v reflect.Value, errSetter erro
 	numIn := f.Type.NumIn()
 	numOut := f.Type.NumOut()
 
-	lastOutError := numOut > 0 && IsError(f.Type.Out(numOut-1)) // nolint gomnd
+	lastOutError := numOut > 0 && goreflect.IsError(f.Type.Out(numOut-1)) // nolint gomnd
 	if lastOutError {
 		numOut--
 	}

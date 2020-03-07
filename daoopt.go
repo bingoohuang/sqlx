@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/bingoohuang/goreflect"
+
 	"github.com/bingoohuang/goreflect/defaults"
 )
 
@@ -109,7 +111,7 @@ func createErrorSetter(v reflect.Value, option *CreateDaoOpt) func(error) {
 		fv := v.Field(i)
 		f := v.Type().Field(i)
 
-		if f.PkgPath == "" /* exportable */ && IsError(f.Type) {
+		if f.PkgPath == "" /* exportable */ && goreflect.IsError(f.Type) {
 			return func(err error) {
 				if option.Error != nil {
 					*option.Error = err

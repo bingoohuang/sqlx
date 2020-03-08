@@ -58,6 +58,8 @@ func (n *NullAny) Scan(value interface{}) error {
 		}
 
 		n.Val = reflect.ValueOf(sn.Bool)
+	case reflect.Interface:
+		n.Val = reflect.ValueOf(value)
 	default:
 		sn := &sql.NullString{}
 		if err := sn.Scan(value); err != nil {

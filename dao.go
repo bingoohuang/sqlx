@@ -302,7 +302,7 @@ func (r *sqlRun) queryBySeqRet1(outType reflect.Type, args []reflect.Value) ([]r
 			return nil, fmt.Errorf("scan rows %s error %w", r.SQL, err)
 		}
 
-		fillFields(mapFields, out, pointers)
+		fillFields(mapFields, pointers)
 
 		if goon, err := interceptorFn(ri, out.Interface()); err != nil {
 			return nil, err
@@ -349,21 +349,40 @@ func (r *sqlRun) doQuery(args []reflect.Value) (*sql.Rows, error) {
 	return rows, nil
 }
 
-func (p *sqlParsed) createMapFields(columns []string, outType reflect.Type) []*reflect.StructField {
-	mapFields := make([]*reflect.StructField, len(columns))
+func (p *sqlParsed) createMapFields(columns []string, outType reflect.Type) []selectItem {
+	mapFields := make([]selectItem, len(columns))
 
-	for i, col := range columns {
-		col := col
-		fv, ok := outType.FieldByNameFunc(func(field string) bool {
-			return matchesField2Col(outType, field, col)
-		})
-
-		if ok {
-			mapFields[i] = &fv
+	switch outType.Kind() {
+	case reflect.Struct:
+		for i, col := range columns {
+			mapFields[i] = p.makeStructField(col, outType)
+		}
+	case reflect.Map:
+		for i, col := range columns {
+			mapFields[i] = p.makeMapField(col, outType)
 		}
 	}
 
 	return mapFields
+}
+
+func (p *sqlParsed) makeMapField(col string, outType reflect.Type) selectItem {
+	return &mapItem{
+		k:     reflect.ValueOf(col),
+		vType: outType.Elem(),
+	}
+}
+
+func (p *sqlParsed) makeStructField(col string, outType reflect.Type) selectItem {
+	fv, ok := outType.FieldByNameFunc(func(field string) bool {
+		return matchesField2Col(outType, field, col)
+	})
+
+	if ok {
+		return &structItem{StructField: &fv}
+	}
+
+	return nil
 }
 
 func (p *sqlParsed) makeVars(args []reflect.Value) []interface{} {
@@ -425,9 +444,44 @@ func matchesField2Col(structType reflect.Type, field, col string) bool {
 	return strings.EqualFold(field, col) || strings.EqualFold(field, strcase.ToCamel(col))
 }
 
-func resetDests(outType reflect.Type, mapFields []*reflect.StructField) ([]interface{}, reflect.Value) {
+type selectItem interface {
+	Type() reflect.Type
+	Set(val reflect.Value)
+	ResetParent(parent reflect.Value)
+}
+
+type structItem struct {
+	*reflect.StructField
+	parent reflect.Value
+}
+
+func (s *structItem) Type() reflect.Type               { return s.StructField.Type }
+func (s *structItem) ResetParent(parent reflect.Value) { s.parent = parent }
+func (s *structItem) Set(val reflect.Value) {
+	f := s.parent.FieldByName(s.StructField.Name)
+	f.Set(val)
+}
+
+type mapItem struct {
+	k      reflect.Value
+	vType  reflect.Type
+	parent reflect.Value
+}
+
+func (s *mapItem) Type() reflect.Type               { return s.vType }
+func (s *mapItem) ResetParent(parent reflect.Value) { s.parent = parent }
+func (s *mapItem) Set(val reflect.Value)            { s.parent.SetMapIndex(s.k, val) }
+
+func resetDests(outType reflect.Type, mapFields []selectItem) ([]interface{}, reflect.Value) {
 	pointers := make([]interface{}, len(mapFields))
-	out := reflect.Indirect(reflect.New(outType))
+
+	var out reflect.Value
+
+	if outType.Kind() == reflect.Map {
+		out = reflect.MakeMap(reflect.MapOf(outType.Key(), outType.Elem()))
+	} else {
+		out = reflect.Indirect(reflect.New(outType))
+	}
 
 	for i, fv := range mapFields {
 		if fv == nil {
@@ -435,28 +489,28 @@ func resetDests(outType reflect.Type, mapFields []*reflect.StructField) ([]inter
 			continue
 		}
 
-		if ImplSQLScanner(fv.Type) {
-			pointers[i] = reflect.New(fv.Type).Interface()
+		fv.ResetParent(out)
+
+		if ImplSQLScanner(fv.Type()) {
+			pointers[i] = reflect.New(fv.Type()).Interface()
 		} else {
-			pointers[i] = &NullAny{Type: fv.Type}
+			pointers[i] = &NullAny{Type: fv.Type()}
 		}
 	}
 
 	return pointers, out
 }
 
-func fillFields(mapFields []*reflect.StructField, out reflect.Value, pointers []interface{}) {
+func fillFields(mapFields []selectItem, pointers []interface{}) {
 	for i, field := range mapFields {
 		if field == nil {
 			continue
 		}
 
-		f := out.FieldByName(field.Name)
-
 		if p, ok := pointers[i].(*NullAny); ok {
-			f.Set(p.getVal())
+			field.Set(p.getVal())
 		} else {
-			f.Set(reflect.ValueOf(pointers[i]).Elem())
+			field.Set(reflect.ValueOf(pointers[i]).Elem())
 		}
 	}
 }

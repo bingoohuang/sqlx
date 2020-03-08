@@ -249,9 +249,11 @@ type personMap struct {
 
 // personDaoMap 定义对person表操作的所有方法
 type personDaoMap struct {
-	CreateTable func()                       `sql:"create table person(id varchar(100), age int, addr varchar(10))"`
-	Add         func(map[string]interface{}) `sql:"insert into person(id, age, addr) values(:id, :age, :addr)"`
-	Find        func(string) personMap       `sql:"select id, age, addr from person where id = :1"`
+	CreateTable func()                              `sql:"create table person(id varchar(100), age int, addr varchar(10))"`
+	Add         func(map[string]interface{})        `sql:"insert into person(id, age, addr) values(:id, :age, :addr)"`
+	Find        func(string) personMap              `sql:"select id, age, addr from person where id = :1"`
+	FindAsMap1  func(string) map[string]string      `sql:"select id, age, addr from person where id = :1"`
+	FindAsMap2  func(string) map[string]interface{} `sql:"select id, age, addr from person where id = :1"`
 }
 
 func TestMapArg(t *testing.T) {
@@ -262,11 +264,12 @@ func TestMapArg(t *testing.T) {
 	that.Nil(sqlx.CreateDao("sqlite3", openDB(t), dao))
 
 	dao.CreateTable()
-	dao.Add(map[string]interface{}{
-		"id":   "40685",
-		"age":  200,
-		"addr": "bjca",
-	})
-	p1 := dao.Find("40685")
-	that.Equal(personMap{ID: "40685", Age: 200, Addr: "bjca"}, p1)
+	dao.Add(map[string]interface{}{"id": "40685", "age": 500, "addr": "bjca"})
+	dao.Add(map[string]interface{}{"id": "40686", "age": 600, "addr": nil})
+
+	that.Equal(personMap{ID: "40685", Age: 500, Addr: "bjca"}, dao.Find("40685"))
+	that.Equal(personMap{ID: "40686", Age: 600, Addr: ""}, dao.Find("40686"))
+
+	that.Equal(map[string]string{"id": "40685", "age": "500", "addr": "bjca"}, dao.FindAsMap1("40685"))
+	that.Equal(map[string]interface{}{"id": "40685", "age": int64(500), "addr": "bjca"}, dao.FindAsMap2("40685"))
 }

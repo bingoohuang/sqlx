@@ -247,13 +247,24 @@ type personMap struct {
 	Addr string
 }
 
+const dotSQLMap = `
+-- name: CreateTable
+create table person(id varchar(100), age int, addr varchar(10))
+
+-- name: Find
+select id, age, addr from person where id = :1;
+
+-- name: Add
+insert into person(id, age, addr) values(:id, :age, :addr)
+`
+
 // personDaoMap 定义对person表操作的所有方法
 type personDaoMap struct {
-	CreateTable func()                              `sql:"create table person(id varchar(100), age int, addr varchar(10))"`
-	Add         func(map[string]interface{})        `sql:"insert into person(id, age, addr) values(:id, :age, :addr)"`
-	Find        func(string) personMap              `sql:"select id, age, addr from person where id = :1"`
-	FindAsMap1  func(string) map[string]string      `sql:"select id, age, addr from person where id = :1"`
-	FindAsMap2  func(string) map[string]interface{} `sql:"select id, age, addr from person where id = :1"`
+	CreateTable func()
+	Add         func(map[string]interface{})
+	Find        func(string) personMap
+	FindAsMap1  func(string) map[string]string      `sqlName:"Find"`
+	FindAsMap2  func(string) map[string]interface{} `sqlName:"Find"`
 }
 
 func TestMapArg(t *testing.T) {
@@ -261,7 +272,7 @@ func TestMapArg(t *testing.T) {
 
 	// 生成DAO，自动创建dao结构体中的函数字段
 	dao := &personDaoMap{}
-	that.Nil(sqlx.CreateDao("sqlite3", openDB(t), dao))
+	that.Nil(sqlx.CreateDao("sqlite3", openDB(t), dao, sqlx.WithSQLStr(dotSQLMap)))
 
 	dao.CreateTable()
 	dao.Add(map[string]interface{}{"id": "40685", "age": 500, "addr": "bjca"})

@@ -45,10 +45,7 @@ func CreateDao(driverName string, db *sql.DB, dao interface{}, createDaoOpts ...
 			continue
 		}
 
-		sqlStmt := f.Tag.Get("sql")
-		if sqlStmt == "" && option.DotSQL != nil {
-			sqlStmt, _ = option.DotSQL.Raw(f.Name)
-		}
+		sqlStmt := option.getSQLStmt(f)
 
 		if sqlStmt == "" {
 			return fmt.Errorf("failed to find sql with name %s", f.Name)
@@ -75,6 +72,24 @@ func CreateDao(driverName string, db *sql.DB, dao interface{}, createDaoOpts ...
 	}
 
 	return nil
+}
+
+func (option *CreateDaoOpt) getSQLStmt(f reflect.StructField) string {
+	sqlStmt := f.Tag.Get("sql")
+	if sqlStmt != "" {
+		return sqlStmt
+	}
+
+	if option.DotSQL != nil {
+		sqlName := f.Tag.Get("sqlName")
+		if sqlName == "" {
+			sqlName = f.Name
+		}
+
+		sqlStmt, _ = option.DotSQL.Raw(sqlName)
+	}
+
+	return sqlStmt
 }
 
 func (r *sqlRun) createFn(f reflect.StructField, v reflect.Value, errSetter errorSetter) error {

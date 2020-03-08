@@ -183,7 +183,10 @@ func (r *sqlRun) execByNamedArg1Ret0(bean reflect.Value) ([]reflect.Value, error
 		return nil, fmt.Errorf("failed to prepare sql %s error %w", r.SQL, err)
 	}
 
-	vars := r.createNamedVars(itemSize, item0, bean)
+	vars, err := r.createNamedVars(itemSize, item0, bean)
+	if err != nil {
+		return nil, err
+	}
 
 	if isBeanSlice {
 		r.logPrepare(vars)
@@ -204,10 +207,29 @@ func (r *sqlRun) execByNamedArg1Ret0(bean reflect.Value) ([]reflect.Value, error
 	return []reflect.Value{}, nil
 }
 
-func (p *sqlParsed) createNamedVars(beanSize int, item0, bean reflect.Value) [][]interface{} {
+func (p *sqlParsed) createNamedVars(beanSize int, item0, bean reflect.Value) ([][]interface{}, error) {
 	item := item0
-	itemType := reflect.TypeOf(item0)
 	vars := make([][]interface{}, beanSize)
+	itemType := item.Type()
+
+	var namedValueParser func(name string, item reflect.Value, itemType reflect.Type) interface{}
+
+	switch itemType.Kind() {
+	case reflect.Struct:
+		namedValueParser = func(name string, item reflect.Value, itemType reflect.Type) interface{} {
+			return item.FieldByNameFunc(func(f string) bool {
+				return matchesField2Col(itemType, f, name)
+			}).Interface()
+		}
+	case reflect.Map:
+		namedValueParser = func(name string, item reflect.Value, itemType reflect.Type) interface{} {
+			return item.MapIndex(reflect.ValueOf(name)).Interface()
+		}
+	}
+
+	if namedValueParser == nil {
+		return nil, fmt.Errorf("unsupported type %v", itemType)
+	}
 
 	for ii := 0; ii < beanSize; ii++ {
 		vars[ii] = make([]interface{}, len(p.Vars))
@@ -217,13 +239,11 @@ func (p *sqlParsed) createNamedVars(beanSize int, item0, bean reflect.Value) [][
 		}
 
 		for i, name := range p.Vars {
-			name := name
-			fv := item.FieldByNameFunc(func(f string) bool { return matchesField2Col(itemType, f, name) })
-			vars[ii][i] = fv.Interface()
+			vars[ii][i] = namedValueParser(name, item, itemType)
 		}
 	}
 
-	return vars
+	return vars, nil
 }
 
 func (p *sqlParsed) logPrepare(vars interface{}) {

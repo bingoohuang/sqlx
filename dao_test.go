@@ -217,10 +217,11 @@ type person5 struct {
 
 // personDao4 定义对person表操作的所有方法
 type personDao4 struct {
-	CreateTable func()            `sql:"create table person(id varchar(100), age int, addr varchar(10) default 'bj')"`
-	AddID       func(int)         `sql:"insert into person(age, addr) values(:1, 'zags')"`
-	FindByAge1  func(int) person4 `sql:"select id, age, addr from person where age = :1"`
-	FindByAge2  func(int) person5 `sql:"select id, age, addr from person where age = :1"`
+	CreateTable func()                       `sql:"create table person(id varchar(100), age int, addr varchar(10) default 'bj')"`
+	AddID       func(int)                    `sql:"insert into person(age, addr) values(:1, 'zags')"`
+	Add         func(map[string]interface{}) `sql:"insert into person(id, age, addr) values(:id, :age, :addr)"`
+	FindByAge1  func(int) person4            `sql:"select id, age, addr from person where age = :1"`
+	FindByAge2  func(int) person5            `sql:"select id, age, addr from person where age = :1"`
 }
 
 func TestNullString(t *testing.T) {
@@ -237,4 +238,35 @@ func TestNullString(t *testing.T) {
 
 	p2 := dao.FindByAge2(100)
 	that.Equal(person5{ID: "", Age: 100, Addr: sql.NullString{String: "zags", Valid: true}}, p2)
+}
+
+// personMap 结构体，对应到person表字段
+type personMap struct {
+	ID   string
+	Age  int
+	Addr string
+}
+
+// personDaoMap 定义对person表操作的所有方法
+type personDaoMap struct {
+	CreateTable func()                       `sql:"create table person(id varchar(100), age int, addr varchar(10))"`
+	Add         func(map[string]interface{}) `sql:"insert into person(id, age, addr) values(:id, :age, :addr)"`
+	Find        func(string) personMap       `sql:"select id, age, addr from person where id = :1"`
+}
+
+func TestMapArg(t *testing.T) {
+	that := assert.New(t)
+
+	// 生成DAO，自动创建dao结构体中的函数字段
+	dao := &personDaoMap{}
+	that.Nil(sqlx.CreateDao("sqlite3", openDB(t), dao))
+
+	dao.CreateTable()
+	dao.Add(map[string]interface{}{
+		"id":   "40685",
+		"age":  200,
+		"addr": "bjca",
+	})
+	p1 := dao.Find("40685")
+	that.Equal(personMap{ID: "40685", Age: 200, Addr: "bjca"}, p1)
 }

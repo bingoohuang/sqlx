@@ -21,6 +21,8 @@ type CreateDaoOpt struct {
 	RowScanInterceptor RowScanInterceptor
 
 	DotSQL *DotSQL
+
+	Logger DaoLogger
 }
 
 // CreateDaoOpter defines the option pattern interface for CreateDaoOpt.
@@ -47,6 +49,11 @@ func WithContext(ctx context.Context) CreateDaoOpter {
 // WithQueryMaxRows specifies the max rows to be fetched when execute query.
 func WithQueryMaxRows(maxRows int) CreateDaoOpter {
 	return CreateDaoOptFn(func(opt *CreateDaoOpt) { opt.QueryMaxRows = maxRows })
+}
+
+// WithLogger specifies dao logger.
+func WithLogger(logger DaoLogger) CreateDaoOpter {
+	return CreateDaoOptFn(func(opt *CreateDaoOpt) { opt.Logger = logger })
 }
 
 // WithSQLFile imports SQL queries from the file.
@@ -111,21 +118,27 @@ func createErrorSetter(v reflect.Value, option *CreateDaoOpt) func(error) {
 		fv := v.Field(i)
 		f := v.Type().Field(i)
 
-		if f.PkgPath == "" /* exportable */ && goreflect.IsError(f.Type) {
-			return func(err error) {
-				if option.Error != nil {
-					*option.Error = err
-				}
+		if f.PkgPath != "" /* not exportable? */ {
+			continue
+		}
 
-				if fv.IsNil() && err == nil {
-					return
-				}
+		if !goreflect.IsError(f.Type) {
+			continue
+		}
 
-				if err == nil {
-					fv.Set(reflect.Zero(f.Type))
-				} else {
-					fv.Set(reflect.ValueOf(err))
-				}
+		return func(err error) {
+			if option.Error != nil {
+				*option.Error = err
+			}
+
+			if fv.IsNil() && err == nil {
+				return
+			}
+
+			if err == nil {
+				fv.Set(reflect.Zero(f.Type))
+			} else {
+				fv.Set(reflect.ValueOf(err))
 			}
 		}
 	}

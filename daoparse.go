@@ -59,7 +59,8 @@ type sqlParsed struct {
 	MaxSeq  int
 	IsQuery bool
 
-	opt *CreateDaoOpt
+	opt    *CreateDaoOpt
+	logger DaoLogger
 }
 
 func (p sqlParsed) isBindBy(by ...bindBy) bool {

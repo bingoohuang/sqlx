@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/bingoohuang/sqlx"
 	"github.com/stretchr/testify/assert"
 )
@@ -267,13 +269,16 @@ type personDaoMap struct {
 	Find        func(string) personMap
 	FindAsMap1  func(string) map[string]string      `sqlName:"Find"`
 	FindAsMap2  func(string) map[string]interface{} `sqlName:"Find"`
+
+	Logger sqlx.DaoLogger
 }
 
 func TestMapArg(t *testing.T) {
 	that := assert.New(t)
 
+	logrus.SetLevel(logrus.DebugLevel)
 	// 生成DAO，自动创建dao结构体中的函数字段
-	dao := &personDaoMap{}
+	dao := &personDaoMap{Logger: &sqlx.DaoLogrus{}}
 	that.Nil(sqlx.CreateDao("sqlite3", openDB(t), dao, sqlx.WithSQLStr(dotSQLMap)))
 
 	dao.CreateTable()

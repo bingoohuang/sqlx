@@ -3,7 +3,6 @@ package sqlx
 import (
 	"database/sql"
 	"fmt"
-	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -25,16 +24,9 @@ func CreateDao(driverName string, db *sql.DB, dao interface{}, createDaoOpts ...
 		return err
 	}
 
-	sqlFilter := func(s string) string {
-		switch driverName {
-		case "postgres":
-			return replaceQuestionMark4Postgres(s)
-		default:
-			return s
-		}
-	}
-
+	sqlFilter := createSQLFilter(driverName)
 	v := reflect.Indirect(daov)
+	logger := createLogger(v, option)
 	errSetter := createErrorSetter(v, option)
 
 	for i := 0; i < v.NumField(); i++ {
@@ -57,6 +49,7 @@ func CreateDao(driverName string, db *sql.DB, dao interface{}, createDaoOpts ...
 		}
 
 		p.opt = option
+		p.logger = logger
 		p.SQL = sqlFilter(p.SQL)
 		numIn := f.Type.NumIn()
 
@@ -64,7 +57,7 @@ func CreateDao(driverName string, db *sql.DB, dao interface{}, createDaoOpts ...
 			return err
 		}
 
-		r := sqlRun{DB: db, sqlParsed: p}
+		r := sqlRun{DB: db, sqlParsed: p, logger: logger}
 
 		if err := r.createFn(f, field, errSetter); err != nil {
 			return err
@@ -72,6 +65,17 @@ func CreateDao(driverName string, db *sql.DB, dao interface{}, createDaoOpts ...
 	}
 
 	return nil
+}
+
+func createSQLFilter(driverName string) func(s string) string {
+	return func(s string) string {
+		switch driverName {
+		case "postgres":
+			return replaceQuestionMark4Postgres(s)
+		default:
+			return s
+		}
+	}
 }
 
 func (option *CreateDaoOpt) getSQLStmt(f reflect.StructField) string {
@@ -149,6 +153,7 @@ func (r *sqlRun) createFn(f reflect.StructField, v reflect.Value, errSetter erro
 type sqlRun struct {
 	*sql.DB
 	*sqlParsed
+	logger DaoLogger
 }
 
 func (r *sqlRun) exec() ([]reflect.Value, error) {
@@ -262,11 +267,7 @@ func (p *sqlParsed) createNamedVars(beanSize int, item0, bean reflect.Value) ([]
 }
 
 func (p *sqlParsed) logPrepare(vars interface{}) {
-	if p.MaxSeq == 0 {
-		fmt.Printf("start to exec %s: [%s]\n", p.ID, p.SQL)
-	} else {
-		fmt.Printf("start to exec %s: [%s] with args %v\n", p.ID, p.SQL, vars)
-	}
+	p.logger.LogStart(p.ID, p.SQL, vars)
 }
 
 func (r *sqlRun) execBySeqRet1(outType reflect.Type, args []reflect.Value) ([]reflect.Value, error) {
@@ -415,9 +416,7 @@ func (p *sqlParsed) makeVars(args []reflect.Value) []interface{} {
 	return vars
 }
 
-func (p *sqlParsed) logError(err error) {
-	fmt.Fprintf(os.Stderr, "%v\n", err)
-}
+func (p *sqlParsed) logError(err error) { p.logger.LogError(err) }
 
 func convertRowsAffected(result sql.Result, stmt string, outType reflect.Type) (reflect.Value, error) {
 	rowsAffected, err := result.RowsAffected()

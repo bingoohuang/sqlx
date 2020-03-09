@@ -252,10 +252,12 @@ const dotSQLMap = `
 create table person(id varchar(100), age int, addr varchar(10))
 
 -- name: Find
-select id, age, addr from person where id = :1;
+select id, age, addr from person 
+where id = :1;
 
 -- name: Add
-insert into person(id, age, addr) values(:id, :age, :addr)
+insert into person(id, age, addr) 
+values(:id, :age, :addr)
 `
 
 // personDaoMap 定义对person表操作的所有方法

@@ -96,16 +96,17 @@ func TestRaw(t *testing.T) {
 
 func TestQueries(t *testing.T) {
 	expectedQueryMap := map[string]string{
-		"select": "SELECT * from users",
+		"select": "SELECT *\nfrom users",
 		"insert": "INSERT INTO users (?, ?, ?)",
 	}
 
 	dot, err := DotSQLLoadString(`
-	-- name: select
-	SELECT * from users;
+-- name: select
+SELECT *
+from users;
 
-	-- name: insert
-	INSERT INTO users (?, ?, ?)
+-- name: insert
+INSERT INTO users (?, ?, ?)
 	`)
 	assert.Nil(t, err)
 

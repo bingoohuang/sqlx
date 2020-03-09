@@ -98,6 +98,7 @@ func (s *DotSQLScanner) appendQueryLine() {
 
 	current.Content = sql
 
+	s.current = current
 	s.queries[s.current.Name] = current
 }
 

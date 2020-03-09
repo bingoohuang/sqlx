@@ -124,9 +124,9 @@ func IsQuerySQL(sql string) (string, bool) {
 	}
 
 	switch key {
-	case "INSERT", "DELETE", "UPDATE", "SET":
+	case "INSERT", "DELETE", "UPDATE", "SET", "REPLACE":
 		return key, false
-	case "SELECT", "SHOW", "DESC", "EXPLAIN":
+	case "SELECT", "SHOW", "DESC", "DESCRIBE", "EXPLAIN":
 		return key, true
 	default:
 		return key, false

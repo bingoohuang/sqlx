@@ -135,8 +135,8 @@ func TestDaoWithRowScanInterceptor(t *testing.T) {
 	// 生成DAO，自动创建dao结构体中的函数字段
 	dao := &personDao2{}
 	p := person{}
-	f := sqlx.RowScanInterceptorFn(func(rowIndex int, v interface{}) (bool, error) {
-		p = v.(person)
+	f := sqlx.RowScanInterceptorFn(func(rowIndex int, v ...interface{}) (bool, error) {
+		p = v[0].(person)
 		return false, nil
 	})
 
@@ -271,6 +271,10 @@ type personDaoMap struct {
 	FindAsMap2  func(string) map[string]interface{} `sqlName:"Find"`
 
 	Logger sqlx.DaoLogger
+
+	Count   func() int                    `sql:"select count(*) from person"`
+	GetAddr func(string) string           `sql:"select addr from person where id=:1"`
+	Get2    func(string) (string, string) `sql:"select id, addr from person where id=:1"`
 }
 
 func TestMapArg(t *testing.T) {
@@ -290,4 +294,11 @@ func TestMapArg(t *testing.T) {
 
 	that.Equal(map[string]string{"id": "40685", "age": "500", "addr": "bjca"}, dao.FindAsMap1("40685"))
 	that.Equal(map[string]interface{}{"id": "40685", "age": int64(500), "addr": "bjca"}, dao.FindAsMap2("40685"))
+
+	that.Equal(2, dao.Count())
+	that.Equal("bjca", dao.GetAddr("40685"))
+
+	id, addr := dao.Get2("40685")
+	that.Equal("40685", id)
+	that.Equal("bjca", addr)
 }

@@ -114,9 +114,9 @@ func (r *sqlRun) createFn(f reflect.StructField, v reflect.Value, errSetter erro
 		fn = func(args []reflect.Value) ([]reflect.Value, error) { return r.execByNamedArg1Ret0(args[0]) }
 	case r.isBindBy(bySeq, byAuto) && numOut == 0:
 		fn = r.execBySeqArgsRet0
-	case r.IsQuery && r.isBindBy(bySeq, byAuto, byNone) && numOut == 1:
-		out := f.Type.Out(0)
-		fn = func(args []reflect.Value) ([]reflect.Value, error) { return r.queryBySeqRet1(out, args) }
+	case r.IsQuery && r.isBindBy(bySeq, byAuto, byNone) && numOut >= 1:
+		outTyps := makeOutTypes(f.Type, numOut)
+		fn = func(args []reflect.Value) ([]reflect.Value, error) { return r.queryBySeqRet1(outTyps, args) }
 	case !r.IsQuery && r.isBindBy(bySeq, byAuto) && numOut == 1:
 		out := f.Type.Out(0)
 		fn = func(args []reflect.Value) ([]reflect.Value, error) { return r.execBySeqRet1(out, args) }
@@ -148,6 +148,16 @@ func (r *sqlRun) createFn(f reflect.StructField, v reflect.Value, errSetter erro
 	}))
 
 	return nil
+}
+
+func makeOutTypes(outType reflect.Type, numOut int) []reflect.Type {
+	rt := make([]reflect.Type, numOut)
+
+	for i := 0; i < numOut; i++ {
+		rt[i] = outType.Out(i)
+	}
+
+	return rt
 }
 
 type sqlRun struct {
@@ -287,13 +297,13 @@ func (r *sqlRun) execBySeqRet1(outType reflect.Type, args []reflect.Value) ([]re
 	return []reflect.Value{affected}, nil
 }
 
-func (r *sqlRun) queryBySeqRet1(outType reflect.Type, args []reflect.Value) ([]reflect.Value, error) {
-	isOutSlice := outType.Kind() == reflect.Slice
+func (r *sqlRun) queryBySeqRet1(outTypes []reflect.Type, args []reflect.Value) ([]reflect.Value, error) {
+	out0Type := outTypes[0]
 	outSlice := reflect.Value{}
 
-	if isOutSlice {
-		outSlice = reflect.MakeSlice(outType, 0, 0)
-		outType = outType.Elem()
+	if out0Type.Kind() == reflect.Slice {
+		outSlice = reflect.MakeSlice(out0Type, 0, 0)
+		out0Type = out0Type.Elem()
 	}
 
 	rows, err := r.doQuery(args) // nolint rowserrcheck
@@ -309,35 +319,62 @@ func (r *sqlRun) queryBySeqRet1(outType reflect.Type, args []reflect.Value) ([]r
 	}
 
 	interceptorFn := r.getRowScanInterceptorFn()
-	maxRows := r.opt.QueryMaxRows
-	mapFields := r.createMapFields(columns, outType)
+	mapFields, err := r.createMapFields(columns, out0Type, outTypes)
 
-	for ri := 0; rows.Next() && (maxRows <= 0 || ri < maxRows); ri++ {
-		pointers, out := resetDests(outType, mapFields)
+	if err != nil {
+		return nil, err
+	}
+
+	for ri := 0; rows.Next() && (r.opt.QueryMaxRows <= 0 || ri < r.opt.QueryMaxRows); ri++ {
+		pointers, out := resetDests(out0Type, outTypes, mapFields)
 		if err := rows.Scan(pointers...); err != nil {
 			return nil, fmt.Errorf("scan rows %s error %w", r.SQL, err)
 		}
 
 		fillFields(mapFields, pointers)
 
-		if goon, err := interceptorFn(ri, out.Interface()); err != nil {
-			return nil, err
-		} else if !goon {
-			break
+		if interceptorFn != nil {
+			outValues := make([]interface{}, len(out))
+			for i, outVal := range out {
+				outValues[i] = outVal.Interface()
+			}
+
+			if goon, err := interceptorFn(ri, outValues...); err != nil {
+				return nil, err
+			} else if !goon {
+				break
+			}
 		}
 
-		if !isOutSlice {
-			return []reflect.Value{out}, nil
+		if !outSlice.IsValid() {
+			return out, nil
 		}
 
-		outSlice = reflect.Append(outSlice, out)
+		outSlice = reflect.Append(outSlice, out[0])
 	}
 
-	if isOutSlice {
+	if outSlice.IsValid() {
 		return []reflect.Value{outSlice}, nil
 	}
 
-	return []reflect.Value{reflect.Indirect(reflect.New(outType))}, nil
+	return r.noRows(out0Type, outTypes)
+}
+
+func (r *sqlRun) noRows(out0Type reflect.Type, outTypes []reflect.Type) ([]reflect.Value, error) {
+	switch out0Type.Kind() {
+	case reflect.Map:
+		out := reflect.MakeMap(reflect.MapOf(out0Type.Key(), out0Type.Elem()))
+		return []reflect.Value{out}, nil
+	case reflect.Struct:
+		return []reflect.Value{reflect.Indirect(reflect.New(out0Type))}, nil
+	}
+
+	outValues := make([]reflect.Value, len(outTypes))
+	for i := range outTypes {
+		outValues[i] = reflect.Indirect(reflect.New(outTypes[i]))
+	}
+
+	return outValues, nil
 }
 
 func (p *sqlParsed) getRowScanInterceptorFn() RowScanInterceptorFn {
@@ -345,7 +382,7 @@ func (p *sqlParsed) getRowScanInterceptorFn() RowScanInterceptorFn {
 		return p.opt.RowScanInterceptor.After
 	}
 
-	return func(rowIndex int, v interface{}) (bool, error) { return true, nil }
+	return nil
 }
 
 func (r *sqlRun) doQuery(args []reflect.Value) (*sql.Rows, error) {
@@ -365,21 +402,47 @@ func (r *sqlRun) doQuery(args []reflect.Value) (*sql.Rows, error) {
 	return rows, nil
 }
 
-func (p *sqlParsed) createMapFields(columns []string, outType reflect.Type) []selectItem {
-	mapFields := make([]selectItem, len(columns))
-
-	switch outType.Kind() {
-	case reflect.Struct:
-		for i, col := range columns {
-			mapFields[i] = p.makeStructField(col, outType)
-		}
-	case reflect.Map:
-		for i, col := range columns {
-			mapFields[i] = p.makeMapField(col, outType)
+func (p *sqlParsed) createMapFields(columns []string, out0Type reflect.Type,
+	outTypes []reflect.Type) ([]selectItem, error) {
+	switch out0Type.Kind() {
+	case reflect.Struct, reflect.Map:
+		if len(outTypes) != 1 { // nolint gomnd
+			return nil, fmt.Errorf("unsupported return type  %v for current sql %v", out0Type, p.SQL)
 		}
 	}
 
-	return mapFields
+	switch out0Type.Kind() {
+	case reflect.Struct:
+		mapFields := make([]selectItem, len(columns))
+		for i, col := range columns {
+			mapFields[i] = p.makeStructField(col, out0Type)
+		}
+
+		return mapFields, nil
+	case reflect.Map:
+		mapFields := make([]selectItem, len(columns))
+		for i, col := range columns {
+			mapFields[i] = p.makeMapField(col, out0Type)
+		}
+
+		return mapFields, nil
+	}
+
+	mapFields := make([]selectItem, len(columns))
+
+	for i := range columns {
+		if i < len(outTypes) {
+			mapFields[i] = &singleValue{
+				vType: outTypes[i],
+			}
+		} else {
+			mapFields[i] = &singleValue{
+				vType: reflect.TypeOf(""),
+			}
+		}
+	}
+
+	return mapFields, nil
 }
 
 func (p *sqlParsed) makeMapField(col string, outType reflect.Type) selectItem {
@@ -486,15 +549,33 @@ func (s *mapItem) Type() reflect.Type               { return s.vType }
 func (s *mapItem) ResetParent(parent reflect.Value) { s.parent = parent }
 func (s *mapItem) Set(val reflect.Value)            { s.parent.SetMapIndex(s.k, val) }
 
-func resetDests(outType reflect.Type, mapFields []selectItem) ([]interface{}, reflect.Value) {
+type singleValue struct {
+	parent reflect.Value
+	vType  reflect.Type
+}
+
+func (s *singleValue) Type() reflect.Type               { return s.vType }
+func (s *singleValue) ResetParent(parent reflect.Value) { s.parent = parent }
+func (s *singleValue) Set(val reflect.Value)            { s.parent.Set(val) }
+
+func resetDests(out0Type reflect.Type, outTypes []reflect.Type,
+	mapFields []selectItem) ([]interface{}, []reflect.Value) {
 	pointers := make([]interface{}, len(mapFields))
 
-	var out reflect.Value
+	var out0 reflect.Value
 
-	if outType.Kind() == reflect.Map {
-		out = reflect.MakeMap(reflect.MapOf(outType.Key(), outType.Elem()))
-	} else {
-		out = reflect.Indirect(reflect.New(outType))
+	hasParent := false
+	out := make([]reflect.Value, len(outTypes))
+
+	switch out0Type.Kind() {
+	case reflect.Map:
+		hasParent = true
+		out0 = reflect.MakeMap(reflect.MapOf(out0Type.Key(), out0Type.Elem()))
+		out[0] = out0
+	case reflect.Struct:
+		hasParent = true
+		out0 = reflect.Indirect(reflect.New(out0Type))
+		out[0] = out0
 	}
 
 	for i, fv := range mapFields {
@@ -503,7 +584,12 @@ func resetDests(outType reflect.Type, mapFields []selectItem) ([]interface{}, re
 			continue
 		}
 
-		fv.ResetParent(out)
+		if hasParent {
+			fv.ResetParent(out0)
+		} else if i < len(outTypes) {
+			out[i] = reflect.Indirect(reflect.New(outTypes[i]))
+			fv.ResetParent(out[i])
+		}
 
 		if ImplSQLScanner(fv.Type()) {
 			pointers[i] = reflect.New(fv.Type()).Interface()

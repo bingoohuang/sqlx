@@ -87,14 +87,16 @@ func WithRowScanInterceptor(interceptor RowScanInterceptor) CreateDaoOpter {
 
 // RowScanInterceptor defines the interceptor after a row scanning.
 type RowScanInterceptor interface {
-	After(rowIndex int, v interface{}) (bool, error)
+	After(rowIndex int, v ...interface{}) (bool, error)
 }
 
 // RowScanInterceptorFn defines the interceptor function after a row scanning.
-type RowScanInterceptorFn func(rowIndex int, v interface{}) (bool, error)
+type RowScanInterceptorFn func(rowIndex int, v ...interface{}) (bool, error)
 
 // After is revoked after after a row scanning.
-func (r RowScanInterceptorFn) After(rowIndex int, v interface{}) (bool, error) { return r(rowIndex, v) }
+func (r RowScanInterceptorFn) After(rowIndex int, v ...interface{}) (bool, error) {
+	return r(rowIndex, v...)
+}
 
 func applyCreateDaoOption(createDaoOpts []CreateDaoOpter) (*CreateDaoOpt, error) {
 	opt := &CreateDaoOpt{}

@@ -251,30 +251,37 @@ type personMap struct {
 
 const dotSQLMap = `
 -- name: CreateTable
-create table person(id varchar(100), age int, addr varchar(10))
+create table person(id varchar(100), age int, addr varchar(10));
+
+-- name: Find
+select id, age, addr from person where id = :1;
 
 -- name: Add
-insert into person(id, age, addr) 
-values(:id, :age, :addr)
+insert into person(id, age, addr) values(:id, :age, :addr);
+
+-- name: Count
+select count(*) from person
+
+-- name: Get2
+select id, addr from person where id=:1
 `
 
 // personDaoMap 定义对person表操作的所有方法
 type personDaoMap struct {
 	CreateTable func()
-	Add         func(map[string]interface{})
-	Find        func(string) personMap              `sql:"select id, age, addr from person where id = :1"`
-	FindAsMap1  func(string) map[string]string      `sqlName:"Find"`
-	FindAsMap2  func(string) map[string]interface{} `sqlName:"Find"`
+	Add         func(m map[string]interface{})
+	Find        func(id string) personMap
+	FindAsMap1  func(id string) map[string]string      `sqlName:"Find"`
+	FindAsMap2  func(id string) map[string]interface{} `sqlName:"Find"`
+
+	Count   func() (count int)
+	GetAddr func(id string) (addr string) `sql:"select addr from person where id=:1"`
+	Get2    func(id string) (pid, addr string)
+	Get3    func(id string) (pid string)                     `sqlName:"Get2"`
+	Get4    func(id string) (pid, addr, nos string, noi int) `sqlName:"Get2"`
 
 	Logger sqlx.DaoLogger
-
-	Count   func() int                                 `sql:"select count(*) from person"`
-	GetAddr func(string) string                        `sql:"select addr from person where id=:1"`
-	Get2    func(string) (string, string)              `sql:"select id, addr from person where id=:1"`
-	Get3    func(string) string                        `sqlName:"Get2"`
-	Get4    func(string) (string, string, string, int) `sqlName:"Get2"`
-
-	Error error
+	Error  error
 }
 
 func TestMapArg(t *testing.T) {

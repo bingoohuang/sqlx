@@ -334,7 +334,7 @@ func (r *sqlRun) queryBySeqRet1(outTypes []reflect.Type, args []reflect.Value) (
 
 	for ri := 0; rows.Next() && (r.opt.QueryMaxRows <= 0 || ri < r.opt.QueryMaxRows); ri++ {
 		pointers, out := resetDests(out0Type, outTypes, mapFields)
-		if err := rows.Scan(pointers...); err != nil {
+		if err := rows.Scan(pointers[:len(columns)]...); err != nil {
 			return nil, fmt.Errorf("scan rows %s error %w", r.SQL, err)
 		}
 
@@ -354,7 +354,7 @@ func (r *sqlRun) queryBySeqRet1(outTypes []reflect.Type, args []reflect.Value) (
 		}
 
 		if !outSlice.IsValid() {
-			return out, nil
+			return out[:len(outTypes)], nil
 		}
 
 		outSlice = reflect.Append(outSlice, out[0])
@@ -381,7 +381,7 @@ func (r *sqlRun) noRows(out0Type reflect.Type, outTypes []reflect.Type) ([]refle
 		outValues[i] = reflect.Indirect(reflect.New(outTypes[i]))
 	}
 
-	return outValues, nil
+	return outValues, sql.ErrNoRows
 }
 
 func (p *sqlParsed) getRowScanInterceptorFn() RowScanInterceptorFn {
@@ -435,28 +435,33 @@ func (p *sqlParsed) createMapFields(columns []string, out0Type reflect.Type,
 		return mapFields, nil
 	}
 
-	mapFields := make([]selectItem, len(columns))
+	mapFields := make([]selectItem, max(len(columns), len(outTypes)))
 
 	for i := range columns {
 		if i < len(outTypes) {
-			mapFields[i] = &singleValue{
-				vType: outTypes[i],
-			}
+			mapFields[i] = &singleValue{vType: outTypes[i]}
 		} else {
-			mapFields[i] = &singleValue{
-				vType: reflect.TypeOf(""),
-			}
+			mapFields[i] = &singleValue{vType: reflect.TypeOf("")}
 		}
+	}
+
+	for i := len(columns); i < len(outTypes); i++ {
+		mapFields[i] = &singleValue{vType: outTypes[i]}
 	}
 
 	return mapFields, nil
 }
 
-func (p *sqlParsed) makeMapField(col string, outType reflect.Type) selectItem {
-	return &mapItem{
-		k:     reflect.ValueOf(col),
-		vType: outType.Elem(),
+func max(a, b int) int {
+	if a > b {
+		return a
 	}
+
+	return b
+}
+
+func (p *sqlParsed) makeMapField(col string, outType reflect.Type) selectItem {
+	return &mapItem{k: reflect.ValueOf(col), vType: outType.Elem()}
 }
 
 func (p *sqlParsed) makeStructField(col string, outType reflect.Type) selectItem {
@@ -563,7 +568,13 @@ type singleValue struct {
 
 func (s *singleValue) Type() reflect.Type               { return s.vType }
 func (s *singleValue) ResetParent(parent reflect.Value) { s.parent = parent }
-func (s *singleValue) Set(val reflect.Value)            { s.parent.Set(val) }
+func (s *singleValue) Set(val reflect.Value) {
+	if !s.parent.IsValid() {
+		s.parent = reflect.Indirect(reflect.New(s.vType))
+	}
+
+	s.parent.Set(val)
+}
 
 func resetDests(out0Type reflect.Type, outTypes []reflect.Type,
 	mapFields []selectItem) ([]interface{}, []reflect.Value) {

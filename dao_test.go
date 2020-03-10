@@ -268,10 +268,13 @@ type personDaoMap struct {
 
 	Logger sqlx.DaoLogger
 
-	Count   func() int                    `sql:"select count(*) from person"`
-	GetAddr func(string) string           `sql:"select addr from person where id=:1"`
-	Get2    func(string) (string, string) `sql:"select id, addr from person where id=:1"`
-	//Get3    func(string) string           `sqlName:"Get2"`
+	Count   func() int                                 `sql:"select count(*) from person"`
+	GetAddr func(string) string                        `sql:"select addr from person where id=:1"`
+	Get2    func(string) (string, string)              `sql:"select id, addr from person where id=:1"`
+	Get3    func(string) string                        `sqlName:"Get2"`
+	Get4    func(string) (string, string, string, int) `sqlName:"Get2"`
+
+	Error error
 }
 
 func TestMapArg(t *testing.T) {
@@ -298,5 +301,22 @@ func TestMapArg(t *testing.T) {
 	id, addr := dao.Get2("40685")
 	that.Equal("40685", id)
 	that.Equal("bjca", addr)
-	//that.Equal("40685", dao.Get3("40685"))
+	that.Equal("40685", dao.Get3("40685"))
+
+	{
+		id, addr, other, otherInt := dao.Get4("40685")
+		that.Equal("40685", id)
+		that.Equal("bjca", addr)
+		that.Empty(other)
+		that.Zero(otherInt)
+	}
+
+	{
+		id, addr, other, otherInt := dao.Get4("50685")
+		that.Empty(id)
+		that.Empty(addr)
+		that.Empty(other)
+		that.Zero(otherInt)
+		that.Equal(sql.ErrNoRows, dao.Error)
+	}
 }

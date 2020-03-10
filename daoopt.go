@@ -10,8 +10,6 @@ import (
 	"github.com/bingoohuang/goreflect/defaults"
 )
 
-type errorSetter func(error)
-
 // CreateDaoOpt defines the options for CreateDao
 type CreateDaoOpt struct {
 	Error        *error
@@ -20,9 +18,11 @@ type CreateDaoOpt struct {
 
 	RowScanInterceptor RowScanInterceptor
 
-	DotSQL func(name string) (string, error)
+	DotSQL func(name string) (SQLPart, error)
 
 	Logger DaoLogger
+
+	ErrSetter func(err error)
 }
 
 // CreateDaoOpter defines the option pattern interface for CreateDaoOpt.
@@ -113,15 +113,13 @@ func applyCreateDaoOption(createDaoOpts []CreateDaoOpter) (*CreateDaoOpt, error)
 	}
 
 	if opt.DotSQL == nil {
-		opt.DotSQL = func(string) (string, error) {
-			return "", nil
-		}
+		opt.DotSQL = func(string) (SQLPart, error) { return nil, nil }
 	}
 
 	return opt, nil
 }
 
-func createErrorSetter(v reflect.Value, option *CreateDaoOpt) func(error) {
+func createErrorSetter(v reflect.Value, option *CreateDaoOpt) {
 	for i := 0; i < v.NumField(); i++ {
 		fv := v.Field(i)
 		f := v.Type().Field(i)
@@ -134,7 +132,7 @@ func createErrorSetter(v reflect.Value, option *CreateDaoOpt) func(error) {
 			continue
 		}
 
-		return func(err error) {
+		option.ErrSetter = func(err error) {
 			if option.Error != nil {
 				*option.Error = err
 			}
@@ -149,9 +147,11 @@ func createErrorSetter(v reflect.Value, option *CreateDaoOpt) func(error) {
 				fv.Set(reflect.ValueOf(err))
 			}
 		}
+
+		return
 	}
 
-	return func(err error) {
+	option.ErrSetter = func(err error) {
 		if option.Error != nil {
 			*option.Error = err
 		}

@@ -157,6 +157,7 @@ type personDao3 struct {
 	CreateTable func()
 	AddAll      func(...person)
 	ListAll     func() []person
+	Logger      *sqlx.DaoLogrus
 }
 
 const dotSQL = `
@@ -174,7 +175,7 @@ func TestDaoWithDotSQLString(t *testing.T) {
 	that := assert.New(t)
 
 	// 生成DAO，自动创建dao结构体中的函数字段
-	dao := &personDao3{}
+	dao := &personDao3{Logger: &sqlx.DaoLogrus{}}
 
 	that.Nil(sqlx.CreateDao("sqlite3", openDB(t), dao, sqlx.WithSQLStr(dotSQL)))
 
@@ -326,4 +327,62 @@ func TestMapArg(t *testing.T) {
 		that.Zero(otherInt)
 		that.Equal(sql.ErrNoRows, dao.Error)
 	}
+}
+
+const dotSQLDynamic = `
+-- name: CreateTable
+create table person(id varchar(100), age int, addr varchar(10));
+
+-- name: Add
+insert into person(id, age, addr) values(:id, :age, :addr);
+
+-- name: GetAddr
+select addr from person where id = :1 /* if _2 > 0 */ and age = :2 /* end */;
+
+-- name: GetAddr2
+select addr from person where id = :1
+-- if _2 > 0 
+and age = :2 
+-- end
+;
+
+-- name: GetAddrStruct
+select addr from person where id = :id /* if age > 0 */ and age = :age /* end */;
+
+-- name: GetAddrStruct2
+select addr from person where id = :id
+-- if age > 0 
+and age = :age
+-- end
+;
+`
+
+// personDaoDynamic 定义对person表操作的所有方法
+type personDaoDynamic struct {
+	CreateTable func()
+	Add         func(m map[string]interface{})
+	GetAddr     func(id string, age int) (addr string)
+	GetAddr2    func(id string, age int) (addr string)
+
+	GetAddrStruct  func(personMap2 personMap) (addr string)
+	GetAddrStruct2 func(personMap2 personMap) (addr string)
+
+	Logger sqlx.DaoLogger
+	Error  error
+}
+
+func TestMapDynamic(t *testing.T) {
+	that := assert.New(t)
+
+	logrus.SetLevel(logrus.DebugLevel)
+	// 生成DAO，自动创建dao结构体中的函数字段
+	dao := &personDaoDynamic{Logger: &sqlx.DaoLogrus{}}
+	that.Nil(sqlx.CreateDao("sqlite3", openDB(t), dao, sqlx.WithSQLStr(dotSQLDynamic)))
+
+	dao.CreateTable()
+	dao.Add(map[string]interface{}{"id": "40685", "age": 500, "addr": "bjca"})
+	dao.Add(map[string]interface{}{"id": "40685", "age": 600, "addr": "acjb"})
+
+	that.Equal("bjca", dao.GetAddr("40685", 0))
+	that.Equal("bjca", dao.GetAddr("40685", 500))
 }

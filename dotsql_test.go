@@ -87,9 +87,10 @@ func TestRaw(t *testing.T) {
 	dot, err := DotSQLLoadString("--name: my-query\n" + expectedQuery)
 	assert.Nil(t, err)
 
-	got, err := dot.Raw("my-query")
+	eval, err := dot.Raw("my-query")
 	assert.Nil(t, err)
 
+	got, _ := eval.Eval(map[string]interface{}{})
 	got = strings.TrimSpace(got)
 	assert.Equal(t, expectedQuery, got, "Raw() == '%s', expected '%s'", got, expectedQuery)
 }
@@ -117,49 +118,243 @@ INSERT INTO users (?, ?, ?)
 	}
 
 	for name, query := range got {
-		if query.Content != expectedQueryMap[name] {
+		if query.RawSQL() != expectedQueryMap[name] {
 			t.Errorf("QueryMap()[%s] == '%s', expected '%s'", name, query, expectedQueryMap[name])
 		}
 	}
 }
 
 func TestParseSQL(t *testing.T) {
-	parsed, err := parseSQL("", "insert into person(name, age) values(:name, :age)")
+	parsed, err := parseSQL("auto", "insert into person(name, age) values(:name, :age)")
 	assert.Nil(t, err)
 	assert.Equal(t, &sqlParsed{
-		SQL:    "insert into person(name, age) values(?, ?)",
+		Stmt:   "insert into person(name, age) values(?, ?)",
 		BindBy: byName,
 		Vars:   []string{"name", "age"},
 		MaxSeq: 2,
 	}, parsed)
 
-	parsed, err = parseSQL("", "insert into person(name, age) values(:1, :2)")
+	parsed, err = parseSQL("auto", "insert into person(name, age) values(:1, :2)")
 	assert.Nil(t, err)
 	assert.Equal(t, &sqlParsed{
-		SQL:    "insert into person(name, age) values(?, ?)",
+		Stmt:   "insert into person(name, age) values(?, ?)",
 		BindBy: bySeq,
 		Vars:   []string{"1", "2"},
 		MaxSeq: 2,
 	}, parsed)
 
-	parsed, err = parseSQL("", "insert into person(name, age) values(:, :)")
+	parsed, err = parseSQL("auto", "insert into person(name, age) values(:, :)")
 	assert.Nil(t, err)
 	assert.Equal(t, &sqlParsed{
-		SQL:    "insert into person(name, age) values(?, ?)",
+		Stmt:   "insert into person(name, age) values(?, ?)",
 		BindBy: byAuto,
 		Vars:   []string{"", ""},
 		MaxSeq: 2,
 	}, parsed)
 
-	parsed, err = parseSQL("", "insert into person(name, age) values('a', 'b')")
+	parsed, err = parseSQL("auto", "insert into person(name, age) values('a', 'b')")
 	assert.Nil(t, err)
 	assert.Equal(t, &sqlParsed{
-		SQL:    "insert into person(name, age) values('a', 'b')",
+		Stmt:   "insert into person(name, age) values('a', 'b')",
 		BindBy: byNone,
 		Vars:   []string{},
 	}, parsed)
 
-	parsed, err = parseSQL("", "insert into person(name, age) values(:, :age)")
+	parsed, err = parseSQL("auto", "insert into person(name, age) values(:, :age)")
 	assert.Nil(t, parsed)
 	assert.NotNil(t, err)
+}
+
+func TestConvertSQLLines(t *testing.T) {
+	that := assert.New(t)
+
+	that.Equal([]string{"a\nb\nc"}, ConvertSQLLines([]string{"a", "b", "c"}))
+	that.Equal([]string{"--a", "b\nc"}, ConvertSQLLines([]string{"--a", "b", "c"}))
+	that.Equal([]string{"-- if", "b", "-- end"}, ConvertSQLLines([]string{"-- if", "b", "-- end"}))
+	that.Equal([]string{"-- if", "b", "-- end"}, ConvertSQLLines([]string{"/* if */ b /* end */"}))
+	that.Equal([]string{"-- if", "b", "-- end"}, ConvertSQLLines([]string{"/* if */ ", "b", " /* end */"}))
+	that.Equal([]string{"-- if", "b\nc", "-- end"}, ConvertSQLLines([]string{"/* if */ ", "b", "c", " /* end */"}))
+	that.Equal([]string{"-- if", "b\nc", "-- end"}, ConvertSQLLines([]string{"/* if  ", "*/b", "c/*", " end */"}))
+}
+
+func TestParseDynamicSQL(t *testing.T) {
+	that := assert.New(t)
+
+	{
+		lines, part, err := ParseDynamicSQL([]string{"-- if a", "b", "-- end"})
+		that.Nil(err)
+		that.Equal(3, lines)
+		that.Equal(&MultiPart{Parts: []SQLPart{
+			&IfPart{
+				Conditions: []IfCondition{
+					{
+						Expr: "a",
+						Part: &MultiPart{
+							Parts: []SQLPart{&LiteralPart{Literal: "b"}},
+						},
+					},
+				},
+				Else: nil,
+			},
+		}}, part)
+	}
+
+	{
+		lines, part, err := ParseDynamicSQL([]string{"-- if a", "b", "-- else ", "c", "-- end"})
+		that.Nil(err)
+		that.Equal(5, lines)
+		that.Equal(&MultiPart{Parts: []SQLPart{
+			&IfPart{
+				Conditions: []IfCondition{
+					{
+						Expr: "a",
+						Part: &MultiPart{
+							Parts: []SQLPart{&LiteralPart{Literal: "b"}},
+						},
+					},
+				},
+				Else: &MultiPart{
+					Parts: []SQLPart{&LiteralPart{Literal: "c"}},
+				},
+			},
+		}}, part)
+	}
+
+	{
+		lines, part, err := ParseDynamicSQL([]string{"-- if a", "-- if b", "b", "-- end", "-- else ", "-- if c", "c", "-- end", "-- end"})
+		that.Nil(err)
+		that.Equal(9, lines)
+		that.Equal(&MultiPart{Parts: []SQLPart{
+			&IfPart{
+				Conditions: []IfCondition{
+					{
+						Expr: "a",
+						Part: &MultiPart{
+							Parts: []SQLPart{
+								&IfPart{
+									Conditions: []IfCondition{
+										{
+											Expr: "b",
+											Part: &MultiPart{
+												Parts: []SQLPart{&LiteralPart{Literal: "b"}},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				Else: &MultiPart{
+					Parts: []SQLPart{
+						&IfPart{
+							Conditions: []IfCondition{
+								{
+									Expr: "c",
+									Part: &MultiPart{
+										Parts: []SQLPart{&LiteralPart{Literal: "c"}},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}}, part)
+	}
+
+	{
+		lines, part, err := ParseDynamicSQL([]string{"-- if a", "a", "-- elseif b ", "b", "-- end"})
+		that.Nil(err)
+		that.Equal(5, lines)
+		that.Equal(&MultiPart{Parts: []SQLPart{
+			&IfPart{
+				Conditions: []IfCondition{
+					{
+						Expr: "a",
+						Part: &MultiPart{
+							Parts: []SQLPart{&LiteralPart{Literal: "a"}},
+						},
+					}, {
+						Expr: "b",
+						Part: &MultiPart{
+							Parts: []SQLPart{&LiteralPart{Literal: "b"}},
+						},
+					},
+				},
+			},
+		}}, part)
+	}
+
+	{
+		lines, part, err := ParseDynamicSQL([]string{"-- if a", "-- if b", "ab", "-- elseif c ", "ac", "-- end", "-- end"})
+		that.Nil(err)
+		that.Equal(7, lines)
+		that.Equal(&MultiPart{Parts: []SQLPart{
+			&IfPart{
+				Conditions: []IfCondition{
+					{
+						Expr: "a",
+						Part: &MultiPart{
+							Parts: []SQLPart{
+								&IfPart{
+									Conditions: []IfCondition{
+										{
+											Expr: "b",
+											Part: &MultiPart{
+												Parts: []SQLPart{&LiteralPart{"ab"}},
+											},
+										}, {
+											Expr: "c",
+											Part: &MultiPart{
+												Parts: []SQLPart{&LiteralPart{"ac"}},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}}, part)
+	}
+
+	{
+		lines, part, err := ParseDynamicSQL([]string{"-- if a", "-- if b", "ab", "-- elseif c ", "ac", "-- end",
+			"-- else ", "x", "-- end"})
+		that.Nil(err)
+		that.Equal(9, lines)
+		that.Equal(&MultiPart{Parts: []SQLPart{
+			&IfPart{
+				Conditions: []IfCondition{
+					{
+						Expr: "a",
+						Part: &MultiPart{
+							Parts: []SQLPart{
+								&IfPart{
+									Conditions: []IfCondition{
+										{
+											Expr: "b",
+											Part: &MultiPart{Parts: []SQLPart{
+												&LiteralPart{"ab"},
+											}},
+										}, {
+											Expr: "c",
+											Part: &MultiPart{Parts: []SQLPart{
+												&LiteralPart{"ac"},
+											}},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				Else: &MultiPart{Parts: []SQLPart{&LiteralPart{
+					Literal: "x",
+				}}},
+			},
+		}}, part)
+	}
 }

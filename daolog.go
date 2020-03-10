@@ -42,9 +42,9 @@ func (d *DaoLogrus) LogStart(id, sql string, vars interface{}) {
 	logrus.Debugf("start to exec %s [%s] with %v", id, sql, vars)
 }
 
-func createLogger(v reflect.Value, option *CreateDaoOpt) DaoLogger {
+func createLogger(v reflect.Value, option *CreateDaoOpt) {
 	if option.Logger != nil {
-		return option.Logger
+		return
 	}
 
 	for i := 0; i < v.NumField(); i++ {
@@ -56,9 +56,10 @@ func createLogger(v reflect.Value, option *CreateDaoOpt) DaoLogger {
 		}
 
 		if goreflect.ImplType(f.Type, _daoLoggerType) {
-			return fv.Interface().(DaoLogger)
+			option.Logger = fv.Interface().(DaoLogger)
+			return
 		}
 	}
 
-	return &DaoLoggerNoop{}
+	option.Logger = &DaoLoggerNoop{}
 }

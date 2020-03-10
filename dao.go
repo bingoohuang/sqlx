@@ -26,8 +26,8 @@ func CreateDao(driverName string, db *sql.DB, dao interface{}, createDaoOpts ...
 
 	sqlFilter := createSQLFilter(driverName)
 	v := reflect.Indirect(daov)
-	logger := createLogger(v, option)
-	errSetter := createErrorSetter(v, option)
+	createLogger(v, option)
+	createErrorSetter(v, option)
 
 	structValue := MakeStructValue(v)
 	for i := 0; i < structValue.NumField; i++ {
@@ -37,33 +37,50 @@ func CreateDao(driverName string, db *sql.DB, dao interface{}, createDaoOpts ...
 			continue
 		}
 
-		sqlStmt := option.getSQLStmt(f, 0)
-		if sqlStmt == "" {
-			return fmt.Errorf("failed to find sqlName %s", f.Name)
-		}
-
-		p, err := parseSQL(f.Name, sqlStmt)
+		tags, err := ParseTags(string(f.Tag))
 		if err != nil {
-			return fmt.Errorf("failed to parse sql %v error %w", sqlStmt, err)
-		}
-
-		p.opt = option
-		p.logger = logger
-		p.SQL = sqlFilter(p.SQL)
-		numIn := f.Type.NumIn()
-
-		if err := p.checkFuncInOut(numIn, sqlStmt, f); err != nil {
 			return err
 		}
 
-		r := sqlRun{DB: db, sqlParsed: p, logger: logger}
+		sqlStmt, sqlName := option.getSQLStmt(f, tags, 0)
+		if sqlStmt == nil {
+			return fmt.Errorf("failed to find sqlName %s", f.Name)
+		}
 
-		if err := r.createFn(f, errSetter); err != nil {
+		parsed, err := parseSQL(sqlName, sqlStmt.Raw())
+		if err != nil {
+			return err
+		}
+
+		p := &sqlParsed{
+			ID:  sqlName,
+			SQL: sqlStmt,
+		}
+
+		p.opt = option
+		p.sqlFilter = sqlFilter
+
+		p.BindBy = parsed.BindBy
+		p.IsQuery = parsed.IsQuery
+
+		r := sqlRun{DB: db, sqlParsed: p}
+
+		if err := r.createFn(f); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// MapValueOrDefault returns the value associated to the key,
+// or return defaultValue when value does not exits or it is empty.
+func MapValueOrDefault(m map[string]string, key, defaultValue string) string {
+	if v, ok := m[key]; ok && v != "" {
+		return v
+	}
+
+	return defaultValue
 }
 
 func createSQLFilter(driverName string) func(s string) string {
@@ -77,33 +94,42 @@ func createSQLFilter(driverName string) func(s string) string {
 	}
 }
 
-func (option *CreateDaoOpt) getSQLStmt(field StructField, stack int) string {
+func (option *CreateDaoOpt) getSQLStmt(field StructField, tags Tags, stack int) (SQLPart, string) {
 	if stack > 10 { // nolint gomnd
-		return ""
+		return nil, ""
 	}
 
 	if sqlStmt := field.GetTag("sql"); sqlStmt != "" {
-		return sqlStmt
+		dsi := DotSQLItem{
+			Name:    field.Name,
+			Content: []string{sqlStmt},
+			Attrs:   tags.Map(),
+		}
+		part, err := dsi.DynamicSQL()
+		option.Logger.LogError(err)
+
+		return part, field.Name
 	}
 
 	sqlName := field.GetTagOr("sqlName", field.Name)
-
-	if sqlStmt, _ := option.DotSQL(sqlName); sqlStmt != "" {
-		return sqlStmt
+	if part, err := option.DotSQL(sqlName); err != nil {
+		option.Logger.LogError(err)
+	} else if part != nil {
+		return part, sqlName
 	}
 
 	if sqlName == field.Name {
-		return ""
+		return nil, ""
 	}
 
 	if field, ok := field.Parent.FieldByName(sqlName); ok {
-		return option.getSQLStmt(field, stack+1) // nolint gomnd
+		return option.getSQLStmt(field, nil, stack+1) // nolint gomnd
 	}
 
-	return ""
+	return nil, sqlName
 }
 
-func (r *sqlRun) createFn(f StructField, errSetter errorSetter) error {
+func (r *sqlRun) createFn(f StructField) error {
 	numIn := f.Type.NumIn()
 	numOut := f.Type.NumOut()
 
@@ -116,29 +142,36 @@ func (r *sqlRun) createFn(f StructField, errSetter errorSetter) error {
 
 	switch {
 	case numIn == 0 && numOut == 0:
-		fn = func([]reflect.Value) ([]reflect.Value, error) { return r.exec() }
+		fn = func([]reflect.Value) ([]reflect.Value, error) {
+			return r.exec(numIn, f)
+		}
 	case numIn == 1 && r.isBindBy(byName) && numOut == 0:
-		fn = func(args []reflect.Value) ([]reflect.Value, error) { return r.execByNamedArg1Ret0(args[0]) }
+		fn = func(args []reflect.Value) ([]reflect.Value, error) { return r.execByNamedArg1Ret0(numIn, f, args[0]) }
 	case r.isBindBy(bySeq, byAuto) && numOut == 0:
-		fn = r.execBySeqArgsRet0
+		fn = func(args []reflect.Value) ([]reflect.Value, error) { return r.execBySeqArgsRet0(numIn, f, args) }
 	case r.IsQuery && r.isBindBy(bySeq, byAuto, byNone) && numOut >= 1:
-		outTyps := makeOutTypes(f.Type, numOut)
-		fn = func(args []reflect.Value) ([]reflect.Value, error) { return r.queryBySeqRet1(outTyps, args) }
+		outTypes := makeOutTypes(f.Type, numOut)
+		fn = func(args []reflect.Value) ([]reflect.Value, error) { return r.queryBySeqRet1(numIn, f, outTypes, args) }
+	case numIn == 1 && r.IsQuery && r.isBindBy(byName) && numOut >= 1:
+		outTypes := makeOutTypes(f.Type, numOut)
+		fn = func(args []reflect.Value) ([]reflect.Value, error) {
+			return r.queryByNameRet1(numIn, f, args[0], outTypes)
+		}
 	case !r.IsQuery && r.isBindBy(bySeq, byAuto) && numOut == 1:
 		out := f.Type.Out(0)
-		fn = func(args []reflect.Value) ([]reflect.Value, error) { return r.execBySeqRet1(out, args) }
+		fn = func(args []reflect.Value) ([]reflect.Value, error) { return r.execBySeqRet1(numIn, f, out, args) }
 	default:
-		err := fmt.Errorf("unsupportd func %v", f.Type)
+		err := fmt.Errorf("unsupportd func %s %v", f.Name, f.Type)
 		r.logError(err)
 
 		return err
 	}
 
 	f.Field.Set(reflect.MakeFunc(f.Type, func(args []reflect.Value) []reflect.Value {
-		errSetter(nil)
+		r.opt.ErrSetter(nil)
 		values, err := fn(args)
 		if err != nil {
-			errSetter(err)
+			r.opt.ErrSetter(err)
 			r.logError(err)
 
 			values = make([]reflect.Value, numOut, numOut+1) // nolint gomnd
@@ -170,12 +203,17 @@ func makeOutTypes(outType reflect.Type, numOut int) []reflect.Type {
 type sqlRun struct {
 	*sql.DB
 	*sqlParsed
-	logger DaoLogger
 }
 
-func (r *sqlRun) exec() ([]reflect.Value, error) {
-	r.logPrepare("(none)")
-	_, err := r.ExecContext(r.opt.Ctx, r.SQL)
+func (r *sqlRun) exec(numIn int, f StructField) ([]reflect.Value, error) {
+	runSQL, err := r.evalSeq(numIn, f, nil)
+	r.logPrepare(runSQL, "(none)")
+
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = r.ExecContext(r.opt.Ctx, runSQL)
 
 	if err != nil {
 		return nil, fmt.Errorf("execute %s error %w", r.SQL, err)
@@ -184,11 +222,16 @@ func (r *sqlRun) exec() ([]reflect.Value, error) {
 	return []reflect.Value{}, nil
 }
 
-func (r *sqlRun) execBySeqArgsRet0(args []reflect.Value) ([]reflect.Value, error) {
+func (r *sqlRun) execBySeqArgsRet0(numIn int, f StructField, args []reflect.Value) ([]reflect.Value, error) {
+	runSQL, err := r.evalSeq(numIn, f, args)
+	if err != nil {
+		return nil, err
+	}
+
 	vars := r.makeVars(args)
-	r.logPrepare(vars)
+	r.logPrepare(runSQL, vars)
 
-	_, err := r.ExecContext(r.opt.Ctx, r.SQL, vars...)
+	_, err = r.ExecContext(r.opt.Ctx, runSQL, vars...)
 	if err != nil {
 		return nil, fmt.Errorf("execute %s error %w", r.SQL, err)
 	}
@@ -196,7 +239,65 @@ func (r *sqlRun) execBySeqArgsRet0(args []reflect.Value) ([]reflect.Value, error
 	return []reflect.Value{}, nil
 }
 
-func (r *sqlRun) execByNamedArg1Ret0(bean reflect.Value) ([]reflect.Value, error) {
+func (r *sqlRun) evalSeq(numIn int, f StructField, args []reflect.Value) (string, error) {
+	env := make(map[string]interface{})
+	for i, arg := range args {
+		env[fmt.Sprintf("_%d", i+1)] = arg.Interface() // nolint gomnd
+	}
+
+	return r.eval(numIn, f, env)
+}
+
+func (r *sqlRun) eval(numIn int, f StructField, env map[string]interface{}) (string, error) {
+	runSQL, err := r.SQL.Eval(env)
+	if err != nil {
+		return "", err
+	}
+
+	if err := r.parseSQL(r.ID, runSQL); err != nil {
+		return "", err
+	}
+
+	if err := r.checkFuncInOut(numIn, f); err != nil {
+		return "", err
+	}
+
+	return runSQL, nil
+}
+
+func (r *sqlRun) queryByNameRet1(numIn int, f StructField, bean reflect.Value,
+	outTypes []reflect.Type) ([]reflect.Value, error) {
+	env := r.createNamedMap(bean)
+
+	runSQL, err := r.eval(numIn, f, env)
+	if err != nil {
+		return nil, err
+	}
+
+	parsed, err := parseSQL(r.ID, runSQL)
+	if err != nil {
+		return nil, err
+	}
+
+	r.resetSQLParsed(parsed)
+
+	vars, err := r.createNamedVars(bean)
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := r.doQueryDirectVars(runSQL, vars) // nolint rowserrcheck
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	return r.processQueryRows(rows, outTypes)
+}
+
+// nolint funlen
+func (r *sqlRun) execByNamedArg1Ret0(numIn int, f StructField, bean reflect.Value) ([]reflect.Value, error) {
 	item0 := bean
 	itemSize := 1
 	isBeanSlice := bean.Type().Kind() == reflect.Slice
@@ -210,29 +311,58 @@ func (r *sqlRun) execByNamedArg1Ret0(bean reflect.Value) ([]reflect.Value, error
 		itemSize = bean.Len()
 	}
 
+	var (
+		err error
+		pr  *sql.Stmt
+	)
+
 	tx, err := r.BeginTx(r.opt.Ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin tx %w", err)
 	}
 
-	pr, err := tx.PrepareContext(r.opt.Ctx, r.SQL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to prepare sql %s error %w", r.SQL, err)
-	}
-
-	vars, err := r.createNamedVars(itemSize, item0, bean)
-	if err != nil {
-		return nil, err
-	}
-
-	if isBeanSlice {
-		r.logPrepare(vars)
-	} else {
-		r.logPrepare(vars[0])
-	}
+	lastSQL := ""
 
 	for ii := 0; ii < itemSize; ii++ {
-		if _, err := pr.ExecContext(r.opt.Ctx, vars[ii]...); err != nil {
+		if ii > 0 {
+			item0 = bean.Index(ii)
+		}
+
+		env := r.createNamedMap(item0)
+		runSQL, err := r.eval(numIn, f, env)
+
+		if err != nil {
+			return nil, err
+		}
+
+		if lastSQL != runSQL {
+			lastSQL = runSQL
+
+			parsed, err := parseSQL(r.ID, runSQL)
+			if err != nil {
+				return nil, err
+			}
+
+			r.resetSQLParsed(parsed)
+
+			pr, err = tx.PrepareContext(r.opt.Ctx, r.Stmt)
+			if err != nil {
+				return nil, fmt.Errorf("failed to prepare sql %s error %w", r.SQL, err)
+			}
+		}
+
+		vars, err := r.createNamedVars(item0)
+		if err != nil {
+			return nil, err
+		}
+
+		if isBeanSlice {
+			r.logPrepare(runSQL, vars)
+		} else {
+			r.logPrepare(runSQL, vars[0])
+		}
+
+		if _, err := pr.ExecContext(r.opt.Ctx, vars...); err != nil {
 			return nil, fmt.Errorf("failed to execute %s error %w", r.SQL, err)
 		}
 	}
@@ -244,10 +374,31 @@ func (r *sqlRun) execByNamedArg1Ret0(bean reflect.Value) ([]reflect.Value, error
 	return []reflect.Value{}, nil
 }
 
-func (p *sqlParsed) createNamedVars(beanSize int, item0, bean reflect.Value) ([][]interface{}, error) {
-	item := item0
-	vars := make([][]interface{}, beanSize)
-	itemType := item.Type()
+func (p *sqlParsed) createNamedMap(bean reflect.Value) map[string]interface{} {
+	m := make(map[string]interface{})
+
+	switch bean.Type().Kind() {
+	case reflect.Struct:
+		structValue := MakeStructValue(bean)
+		for i, f := range structValue.FieldTypes {
+			name := f.Name
+			if tagName := f.Tag.Get("name"); tagName != "" {
+				name = tagName
+			}
+
+			m[name] = bean.Field(i).Interface()
+		}
+	case reflect.Map:
+		for _, k := range bean.MapKeys() {
+			m[k.Interface().(string)] = bean.MapIndex(k).Interface()
+		}
+	}
+
+	return m
+}
+
+func (p *sqlParsed) createNamedVars(bean reflect.Value) ([]interface{}, error) {
+	itemType := bean.Type()
 
 	var namedValueParser func(name string, item reflect.Value, itemType reflect.Type) interface{}
 
@@ -268,35 +419,35 @@ func (p *sqlParsed) createNamedVars(beanSize int, item0, bean reflect.Value) ([]
 		return nil, fmt.Errorf("unsupported type %v", itemType)
 	}
 
-	for ii := 0; ii < beanSize; ii++ {
-		vars[ii] = make([]interface{}, len(p.Vars))
+	vars := make([]interface{}, len(p.Vars))
 
-		if ii > 0 {
-			item = bean.Index(ii)
-		}
-
-		for i, name := range p.Vars {
-			vars[ii][i] = namedValueParser(name, item, itemType)
-		}
+	for i, name := range p.Vars {
+		vars[i] = namedValueParser(name, bean, itemType)
 	}
 
 	return vars, nil
 }
 
-func (p *sqlParsed) logPrepare(vars interface{}) {
-	p.logger.LogStart(p.ID, p.SQL, vars)
+func (p *sqlParsed) logPrepare(runSQL string, vars interface{}) {
+	p.opt.Logger.LogStart(p.ID, runSQL, vars)
 }
 
-func (r *sqlRun) execBySeqRet1(outType reflect.Type, args []reflect.Value) ([]reflect.Value, error) {
-	vars := r.makeVars(args)
-	r.logPrepare(vars)
+func (r *sqlRun) execBySeqRet1(numIn int, f StructField,
+	outType reflect.Type, args []reflect.Value) ([]reflect.Value, error) {
+	runSQL, err := r.evalSeq(numIn, f, args)
+	if err != nil {
+		return nil, err
+	}
 
-	result, err := r.ExecContext(r.opt.Ctx, r.SQL, vars...)
+	vars := r.makeVars(args)
+	r.logPrepare(runSQL, vars)
+
+	result, err := r.ExecContext(r.opt.Ctx, runSQL, vars...)
 	if err != nil {
 		return nil, fmt.Errorf("execute %s error %w", r.SQL, err)
 	}
 
-	affected, err := convertRowsAffected(result, r.SQL, outType)
+	affected, err := convertRowsAffected(result, runSQL, outType)
 	if err != nil {
 		return nil, fmt.Errorf("execute %s error %w", r.SQL, err)
 	}
@@ -304,25 +455,35 @@ func (r *sqlRun) execBySeqRet1(outType reflect.Type, args []reflect.Value) ([]re
 	return []reflect.Value{affected}, nil
 }
 
-func (r *sqlRun) queryBySeqRet1(outTypes []reflect.Type, args []reflect.Value) ([]reflect.Value, error) {
-	out0Type := outTypes[0]
-	outSlice := reflect.Value{}
-
-	if out0Type.Kind() == reflect.Slice {
-		outSlice = reflect.MakeSlice(out0Type, 0, 0)
-		out0Type = out0Type.Elem()
+func (r *sqlRun) queryBySeqRet1(numIn int, f StructField,
+	outTypes []reflect.Type, args []reflect.Value) ([]reflect.Value, error) {
+	runSQL, err := r.evalSeq(numIn, f, args)
+	if err != nil {
+		return nil, err
 	}
 
-	rows, err := r.doQuery(args) // nolint rowserrcheck
+	rows, err := r.doQuery(runSQL, args) // nolint rowserrcheck
 	if err != nil {
 		return nil, err
 	}
 
 	defer rows.Close()
 
+	return r.processQueryRows(rows, outTypes)
+}
+
+func (r *sqlRun) processQueryRows(rows *sql.Rows, outTypes []reflect.Type) ([]reflect.Value, error) {
 	columns, err := rows.Columns()
 	if err != nil {
 		return nil, fmt.Errorf("get columns %s error %w", r.SQL, err)
+	}
+
+	out0Type := outTypes[0]
+	outSlice := reflect.Value{}
+
+	if out0Type.Kind() == reflect.Slice {
+		outSlice = reflect.MakeSlice(out0Type, 0, 0)
+		out0Type = out0Type.Elem()
 	}
 
 	interceptorFn := r.getRowScanInterceptorFn()
@@ -392,21 +553,33 @@ func (p *sqlParsed) getRowScanInterceptorFn() RowScanInterceptorFn {
 	return nil
 }
 
-func (r *sqlRun) doQuery(args []reflect.Value) (*sql.Rows, error) {
+func (r *sqlRun) doQuery(runSQL string, args []reflect.Value) (*sql.Rows, error) {
 	vars := r.makeVars(args)
 
-	r.logPrepare(vars)
+	return r.doQueryDirectVars(runSQL, vars)
+}
 
-	rows, err := r.QueryContext(r.opt.Ctx, r.SQL, vars...)
+func (r *sqlRun) doQueryDirectVars(runSQL string, vars []interface{}) (*sql.Rows, error) {
+	r.logPrepare(runSQL, vars)
+
+	rows, err := r.QueryContext(r.opt.Ctx, runSQL, vars...)
 	if err != nil || rows.Err() != nil {
 		if err == nil {
 			err = rows.Err()
 		}
 
-		return nil, fmt.Errorf("execute %s error %w", r.SQL, err)
+		return nil, fmt.Errorf("execute %s error %w", runSQL, err)
 	}
 
 	return rows, nil
+}
+
+func (r *sqlRun) resetSQLParsed(p *sqlParsed) {
+	r.Stmt = p.Stmt
+	r.IsQuery = p.IsQuery
+	r.Vars = p.Vars
+	r.MaxSeq = p.MaxSeq
+	r.BindBy = p.BindBy
 }
 
 func (p *sqlParsed) createMapFields(columns []string, out0Type reflect.Type,
@@ -491,7 +664,7 @@ func (p *sqlParsed) makeVars(args []reflect.Value) []interface{} {
 	return vars
 }
 
-func (p *sqlParsed) logError(err error) { p.logger.LogError(err) }
+func (p *sqlParsed) logError(err error) { p.opt.Logger.LogError(err) }
 
 func convertRowsAffected(result sql.Result, stmt string, outType reflect.Type) (reflect.Value, error) {
 	rowsAffected, err := result.RowsAffected()

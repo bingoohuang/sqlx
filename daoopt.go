@@ -20,7 +20,7 @@ type CreateDaoOpt struct {
 
 	RowScanInterceptor RowScanInterceptor
 
-	DotSQL *DotSQL
+	DotSQL func(name string) (string, error)
 
 	Logger DaoLogger
 }
@@ -64,7 +64,7 @@ func WithSQLFile(sqlFile string) CreateDaoOpter {
 			panic(err)
 		}
 
-		opt.DotSQL = ds
+		opt.DotSQL = ds.Raw
 	})
 }
 
@@ -76,7 +76,7 @@ func WithSQLStr(s string) CreateDaoOpter {
 			panic(err)
 		}
 
-		opt.DotSQL = ds
+		opt.DotSQL = ds.Raw
 	})
 }
 
@@ -110,6 +110,12 @@ func applyCreateDaoOption(createDaoOpts []CreateDaoOpter) (*CreateDaoOpt, error)
 
 	if opt.Ctx == nil {
 		opt.Ctx = context.Background()
+	}
+
+	if opt.DotSQL == nil {
+		opt.DotSQL = func(string) (string, error) {
+			return "", nil
+		}
 	}
 
 	return opt, nil

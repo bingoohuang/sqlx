@@ -2,12 +2,11 @@ package sqlx
 
 import (
 	"fmt"
-	"reflect"
 	"regexp"
 	"strconv"
 )
 
-func (p *sqlParsed) checkFuncInOut(numIn int, sqlStmt string, f reflect.StructField) error {
+func (p *sqlParsed) checkFuncInOut(numIn int, sqlStmt string, f StructField) error {
 	if numIn == 0 && !p.isBindBy(byNone) {
 		return fmt.Errorf("sql %s required bind varialbes, but the func %v has none", sqlStmt, f.Type)
 	}

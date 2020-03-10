@@ -223,7 +223,7 @@ type personDao4 struct {
 	AddID       func(int)                    `sql:"insert into person(age, addr) values(:1, 'zags')"`
 	Add         func(map[string]interface{}) `sql:"insert into person(id, age, addr) values(:id, :age, :addr)"`
 	FindByAge1  func(int) person4            `sql:"select id, age, addr from person where age = :1"`
-	FindByAge2  func(int) person5            `sql:"select id, age, addr from person where age = :1"`
+	FindByAge2  func(int) person5            `sqlName:"FindByAge1"`
 }
 
 func TestNullString(t *testing.T) {
@@ -253,10 +253,6 @@ const dotSQLMap = `
 -- name: CreateTable
 create table person(id varchar(100), age int, addr varchar(10))
 
--- name: Find
-select id, age, addr from person 
-where id = :1;
-
 -- name: Add
 insert into person(id, age, addr) 
 values(:id, :age, :addr)
@@ -266,7 +262,7 @@ values(:id, :age, :addr)
 type personDaoMap struct {
 	CreateTable func()
 	Add         func(map[string]interface{})
-	Find        func(string) personMap
+	Find        func(string) personMap              `sql:"select id, age, addr from person where id = :1"`
 	FindAsMap1  func(string) map[string]string      `sqlName:"Find"`
 	FindAsMap2  func(string) map[string]interface{} `sqlName:"Find"`
 
@@ -275,6 +271,7 @@ type personDaoMap struct {
 	Count   func() int                    `sql:"select count(*) from person"`
 	GetAddr func(string) string           `sql:"select addr from person where id=:1"`
 	Get2    func(string) (string, string) `sql:"select id, addr from person where id=:1"`
+	//Get3    func(string) string           `sqlName:"Get2"`
 }
 
 func TestMapArg(t *testing.T) {
@@ -301,4 +298,5 @@ func TestMapArg(t *testing.T) {
 	id, addr := dao.Get2("40685")
 	that.Equal("40685", id)
 	that.Equal("bjca", addr)
+	//that.Equal("40685", dao.Get3("40685"))
 }

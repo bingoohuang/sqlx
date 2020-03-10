@@ -29,18 +29,17 @@ func CreateDao(driverName string, db *sql.DB, dao interface{}, createDaoOpts ...
 	logger := createLogger(v, option)
 	errSetter := createErrorSetter(v, option)
 
-	for i := 0; i < v.NumField(); i++ {
-		field := v.Field(i)
-		f := v.Type().Field(i)
+	structValue := MakeStructValue(v)
+	for i := 0; i < structValue.NumField; i++ {
+		f := structValue.FieldByIndex(i)
 
-		if f.PkgPath != "" /* not exportable */ || f.Type.Kind() != reflect.Func {
+		if f.PkgPath != "" /* not exportable */ || f.Kind != reflect.Func {
 			continue
 		}
 
-		sqlStmt := option.getSQLStmt(f)
-
+		sqlStmt := option.getSQLStmt(f, 0)
 		if sqlStmt == "" {
-			return fmt.Errorf("failed to find sql with name %s", f.Name)
+			return fmt.Errorf("failed to find sqlName %s", f.Name)
 		}
 
 		p, err := parseSQL(f.Name, sqlStmt)
@@ -59,7 +58,7 @@ func CreateDao(driverName string, db *sql.DB, dao interface{}, createDaoOpts ...
 
 		r := sqlRun{DB: db, sqlParsed: p, logger: logger}
 
-		if err := r.createFn(f, field, errSetter); err != nil {
+		if err := r.createFn(f, errSetter); err != nil {
 			return err
 		}
 	}
@@ -78,25 +77,33 @@ func createSQLFilter(driverName string) func(s string) string {
 	}
 }
 
-func (option *CreateDaoOpt) getSQLStmt(f reflect.StructField) string {
-	sqlStmt := f.Tag.Get("sql")
-	if sqlStmt != "" {
+func (option *CreateDaoOpt) getSQLStmt(field StructField, stack int) string {
+	if stack > 10 { // nolint gomnd
+		return ""
+	}
+
+	if sqlStmt := field.GetTag("sql"); sqlStmt != "" {
 		return sqlStmt
 	}
 
-	if option.DotSQL != nil {
-		sqlName := f.Tag.Get("sqlName")
-		if sqlName == "" {
-			sqlName = f.Name
-		}
+	sqlName := field.GetTagOr("sqlName", field.Name)
 
-		sqlStmt, _ = option.DotSQL.Raw(sqlName)
+	if sqlStmt, _ := option.DotSQL(sqlName); sqlStmt != "" {
+		return sqlStmt
 	}
 
-	return sqlStmt
+	if sqlName == field.Name {
+		return ""
+	}
+
+	if field, ok := field.Parent.FieldByName(sqlName); ok {
+		return option.getSQLStmt(field, stack+1) // nolint gomnd
+	}
+
+	return ""
 }
 
-func (r *sqlRun) createFn(f reflect.StructField, v reflect.Value, errSetter errorSetter) error {
+func (r *sqlRun) createFn(f StructField, errSetter errorSetter) error {
 	numIn := f.Type.NumIn()
 	numOut := f.Type.NumOut()
 
@@ -127,7 +134,7 @@ func (r *sqlRun) createFn(f reflect.StructField, v reflect.Value, errSetter erro
 		return err
 	}
 
-	v.Set(reflect.MakeFunc(f.Type, func(args []reflect.Value) []reflect.Value {
+	f.Field.Set(reflect.MakeFunc(f.Type, func(args []reflect.Value) []reflect.Value {
 		errSetter(nil)
 		values, err := fn(args)
 		if err != nil {

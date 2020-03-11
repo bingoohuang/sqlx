@@ -41,13 +41,13 @@ func WithError(err *error) CreateDaoOpter {
 	return CreateDaoOptFn(func(opt *CreateDaoOpt) { opt.Error = err })
 }
 
-// WithContext specifies the context.Context to db execution processes.
-func WithContext(ctx context.Context) CreateDaoOpter {
+// WithCtx specifies the context.Context to db execution processes.
+func WithCtx(ctx context.Context) CreateDaoOpter {
 	return CreateDaoOptFn(func(opt *CreateDaoOpt) { opt.Ctx = ctx })
 }
 
-// WithQueryMaxRows specifies the max rows to be fetched when execute query.
-func WithQueryMaxRows(maxRows int) CreateDaoOpter {
+// WithLimit specifies the max rows to be fetched when execute query.
+func WithLimit(maxRows int) CreateDaoOpter {
 	return CreateDaoOptFn(func(opt *CreateDaoOpt) { opt.QueryMaxRows = maxRows })
 }
 

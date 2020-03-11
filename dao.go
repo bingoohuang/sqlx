@@ -13,7 +13,7 @@ import (
 )
 
 // CreateDao fulfils the dao (should be pointer)
-func CreateDao(driverName string, db *sql.DB, dao interface{}, createDaoOpts ...CreateDaoOpter) error {
+func CreateDao(db *sql.DB, dao interface{}, createDaoOpts ...CreateDaoOpter) error {
 	daov := reflect.ValueOf(dao)
 	if daov.Kind() != reflect.Ptr || daov.Elem().Kind() != reflect.Struct {
 		return fmt.Errorf("dao should be pointer to struct")
@@ -24,6 +24,7 @@ func CreateDao(driverName string, db *sql.DB, dao interface{}, createDaoOpts ...
 		return err
 	}
 
+	driverName := LookupDriverName(db.Driver())
 	sqlFilter := createSQLFilter(driverName)
 	v := reflect.Indirect(daov)
 	createLogger(v, option)

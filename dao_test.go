@@ -364,8 +364,8 @@ type personDaoDynamic struct {
 	GetAddr     func(id string, age int) (addr string)
 	GetAddr2    func(id string, age int) (addr string)
 
-	GetAddrStruct  func(personMap2 personMap) (addr string)
-	GetAddrStruct2 func(personMap2 personMap) (addr string)
+	GetAddrStruct  func(p personMap) (addr string)
+	GetAddrStruct2 func(p personMap) (addr string)
 
 	Logger sqlx.DaoLogger
 	Error  error
@@ -384,5 +384,14 @@ func TestMapDynamic(t *testing.T) {
 	dao.Add(map[string]interface{}{"id": "40685", "age": 600, "addr": "acjb"})
 
 	that.Equal("bjca", dao.GetAddr("40685", 0))
-	that.Equal("bjca", dao.GetAddr("40685", 500))
+	that.Equal("acjb", dao.GetAddr("40685", 600))
+
+	that.Equal("bjca", dao.GetAddrStruct(personMap{ID: "40685"}))
+	that.Equal("acjb", dao.GetAddrStruct(personMap{ID: "40685", Age: 600}))
+
+	that.Equal("bjca", dao.GetAddr2("40685", 0))
+	that.Equal("acjb", dao.GetAddr2("40685", 600))
+
+	that.Equal("bjca", dao.GetAddrStruct2(personMap{ID: "40685"}))
+	that.Equal("acjb", dao.GetAddrStruct2(personMap{ID: "40685", Age: 600}))
 }

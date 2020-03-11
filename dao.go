@@ -384,6 +384,8 @@ func (p *sqlParsed) createNamedMap(bean reflect.Value) map[string]interface{} {
 			name := f.Name
 			if tagName := f.Tag.Get("name"); tagName != "" {
 				name = tagName
+			} else {
+				name = strcase.ToCamelLower(name)
 			}
 
 			m[name] = bean.Field(i).Interface()

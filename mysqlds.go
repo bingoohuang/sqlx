@@ -87,7 +87,7 @@ func compatibleMySQLClientCmd(s string) string {
 
 	pf.BoolP("mysql", "", false, "mysql command")
 	pf.StringP("MYSQL_PWD", "", "", "MYSQL_PWD env password")
-	pf.StringP("database", "D", "", "Database to use")
+	pf.StringP("database", "D", "", "Schema to use")
 	pf.StringP("host", "h", "", "Connect to host")
 	pf.IntP("port", "P", 3306, "Port number to use")
 	pf.StringP("user", "u", "", "User for login if not current user")

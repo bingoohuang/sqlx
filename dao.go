@@ -107,7 +107,10 @@ func (option *CreateDaoOpt) getSQLStmt(field StructField, tags Tags, stack int) 
 			Attrs:   tags.Map(),
 		}
 		part, err := dsi.DynamicSQL()
-		option.Logger.LogError(err)
+
+		if err != nil {
+			option.Logger.LogError(err)
+		}
 
 		return part, field.Name
 	}
@@ -263,7 +266,7 @@ func (r *sqlRun) eval(numIn int, f StructField, env map[string]interface{}) (str
 		return "", err
 	}
 
-	return runSQL, nil
+	return r.Stmt, nil
 }
 
 func (r *sqlRun) queryByNameRet1(numIn int, f StructField, bean reflect.Value,

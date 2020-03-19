@@ -22,22 +22,22 @@ type SQLMore struct {
 	more More
 
 	// DbDriver 原始驱动名称
-	DbDriver string
+	Driver string
 	// EnhancedDbURI 增强后的URI
-	EnhancedDbURI string
+	EnhancedURI string
 }
 
 // NewSQLMore 创建SQL增强器
 func NewSQLMore(dbDriver, dbURI string) *SQLMore {
 	mores := []More{NewMySQLMore(dbDriver)}
-	sqlMore := &SQLMore{DbDriver: dbDriver}
+	sqlMore := &SQLMore{Driver: dbDriver}
 
-	sqlMore.EnhancedDbURI = dbURI
+	sqlMore.EnhancedURI = dbURI
 
 	for _, m := range mores {
 		if m.Matches() {
 			sqlMore.more = m
-			sqlMore.EnhancedDbURI = m.EnhanceURI(dbURI)
+			sqlMore.EnhancedURI = m.EnhanceURI(dbURI)
 
 			break
 		}
@@ -46,18 +46,18 @@ func NewSQLMore(dbDriver, dbURI string) *SQLMore {
 	return sqlMore
 }
 
-// MustOpen 确保打开新的数据库连接池对象
-func (s *SQLMore) MustOpen() *sql.DB {
-	if db, err := s.Open(); err != nil {
+// Open 确保打开新的数据库连接池对象
+func (s *SQLMore) Open() *sql.DB {
+	if db, err := s.OpenE(); err != nil {
 		panic(err)
 	} else {
 		return db
 	}
 }
 
-// Open 打开新的数据库连接池对象
-func (s *SQLMore) Open() (*sql.DB, error) {
-	db, err := sql.Open(s.DbDriver, s.EnhancedDbURI)
+// OpenE 打开新的数据库连接池对象
+func (s *SQLMore) OpenE() (*sql.DB, error) {
+	db, err := sql.Open(s.Driver, s.EnhancedURI)
 	if err != nil {
 		return nil, err
 	}
@@ -65,18 +65,18 @@ func (s *SQLMore) Open() (*sql.DB, error) {
 	return SetConnectionPool(db), nil
 }
 
-// MustGormOpen 确保打开新的Gorm数据库连接池对象
-func (s *SQLMore) MustGormOpen() *gorm.DB {
-	if db, err := s.GormOpen(); err != nil {
+// GormOpen 确保打开新的Gorm数据库连接池对象
+func (s *SQLMore) GormOpen() *gorm.DB {
+	if db, err := s.GormOpenE(); err != nil {
 		panic(err)
 	} else {
 		return db
 	}
 }
 
-// GormOpen 打开新的Gorm数据库连接池对象
-func (s *SQLMore) GormOpen() (*gorm.DB, error) {
-	db, err := gorm.Open(s.DbDriver, s.EnhancedDbURI)
+// GormOpenE 打开新的Gorm数据库连接池对象
+func (s *SQLMore) GormOpenE() (*gorm.DB, error) {
+	db, err := gorm.Open(s.Driver, s.EnhancedURI)
 	if err != nil {
 		return nil, err
 	}

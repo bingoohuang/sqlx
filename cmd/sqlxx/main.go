@@ -155,47 +155,53 @@ type daoGenerator struct {
 	structColumns []string
 	columns       []Column
 	imports       map[string]bool
+	b             bytes.Buffer
 }
 
 func (g *daoGenerator) complete() {
 
 }
 
-var re = regexp.MustCompile(`\r?\n`) // nolint gochecknoglobals
+// nolint gochecknoglobals
+var (
+	re1 = regexp.MustCompile(`\r?\n`)
+	re2 = regexp.MustCompile(`\s{2,}`)
+)
 
-func oneline(s string) string {
-	return strings.TrimSpace(re.ReplaceAllString(s, " "))
+func line(s string) string {
+	s = re1.ReplaceAllString(s, " ")
+	s = strings.TrimSpace(re2.ReplaceAllString(s, " "))
+
+	return s
 }
-
 func (g *daoGenerator) gen(w io.Writer) {
-	var b bytes.Buffer
+	g.writePackage()
+	g.writeImports()
+	g.writeStruct()
+	g.writeSQL()
 
-	g.writePackage(b)
-	g.writeImports(b)
-	g.writeStruct(b)
-
-	_, _ = b.WriteTo(w)
+	_, _ = g.b.WriteTo(w)
 }
 
-func (g *daoGenerator) writeStruct(b bytes.Buffer) {
+func (g *daoGenerator) writeStruct() {
 	structName := strcase.ToCamel(g.table.Name)
-	b.WriteString("// " + structName + " represents table " + g.table.Name + ".\n")
+	g.b.WriteString("// " + structName + " represents table " + g.table.Name + ".\n")
 
-	if tc := oneline(g.table.Comment); tc != "" {
-		b.WriteString("// " + tc + "\n")
+	if tc := line(g.table.Comment); tc != "" {
+		g.b.WriteString("// " + tc + "\n")
 	}
 
-	b.WriteString("type " + structName + " struct {\n")
+	g.b.WriteString("type " + structName + " struct {\n")
 
 	for _, c := range g.structColumns {
-		b.WriteString(c)
-		b.WriteString("\n")
+		g.b.WriteString(c)
+		g.b.WriteString("\n")
 	}
 
-	b.WriteString("}\n")
+	g.b.WriteString("}\n")
 }
 
-func (g *daoGenerator) writeImports(b bytes.Buffer) {
+func (g *daoGenerator) writeImports() {
 	if len(g.imports) == 0 {
 		return
 	}
@@ -208,17 +214,17 @@ func (g *daoGenerator) writeImports(b bytes.Buffer) {
 
 	sort.Strings(importPkgs)
 
-	b.WriteString("import (\n")
+	g.b.WriteString("import (\n")
 
 	for _, p := range importPkgs {
-		b.WriteString("\t \"" + p + "\"\n")
+		g.b.WriteString("\t \"" + p + "\"\n")
 	}
 
-	b.WriteString(")\n")
+	g.b.WriteString(")\n")
 }
 
-func (g *daoGenerator) writePackage(b bytes.Buffer) {
-	b.WriteString("package " + g.pkg + "\n\n")
+func (g *daoGenerator) writePackage() {
+	g.b.WriteString("package " + g.pkg + "\n\n")
 }
 
 func (g *daoGenerator) addColumn(c Column) {
@@ -240,11 +246,63 @@ func (g *daoGenerator) addColumn(c Column) {
 	b.WriteString("\t" + strcase.ToCamel(c.ColumnName) +
 		" " + colGoType + " `name:\"" + c.ColumnName + "\" `")
 
-	if fc := oneline(c.Comment); fc != "" {
+	if fc := line(c.Comment); fc != "" {
 		b.WriteString("// " + fc)
 	}
 
 	g.structColumns = append(g.structColumns, b.String())
+}
+
+func (g *daoGenerator) writeSQL() {
+	g.b.WriteString("const " + strcase.ToCamelLower(g.table.Name) + "SQL = `")
+
+	g.b.WriteString("\n-- name: SelectAll\nselect ")
+
+	i := 0
+	for _, c := range g.columns {
+		if i > 0 {
+			g.b.WriteString(", ")
+		}
+
+		g.b.WriteString(c.ColumnName)
+		i++
+	}
+
+	g.b.WriteString("\nfrom " + g.table.Name)
+	g.b.WriteString("\n")
+
+	g.b.WriteString("\n-- name: Add\ninsert into " + g.table.Name + "\n")
+
+	i = 0
+	for _, c := range g.columns {
+		if i == 0 {
+			g.b.WriteString("(")
+		} else {
+			g.b.WriteString(", ")
+		}
+
+		g.b.WriteString(c.ColumnName)
+		i++
+	}
+
+	g.b.WriteString(")\n")
+	g.b.WriteString("values\n")
+
+	i = 0
+
+	for _, c := range g.columns {
+		if i == 0 {
+			g.b.WriteString("(")
+		} else {
+			g.b.WriteString(", ")
+		}
+
+		g.b.WriteString(":" + c.ColumnName)
+		i++
+	}
+
+	g.b.WriteString(")\n")
+	g.b.WriteString("`\n")
 }
 
 // nolint gomnd

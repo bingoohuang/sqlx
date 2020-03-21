@@ -12,7 +12,7 @@ import (
 
 	"github.com/bingoohuang/sqlx"
 	"github.com/bingoohuang/strcase"
-	"github.com/jessevdk/go-flags"
+	flags "github.com/jessevdk/go-flags"
 	"github.com/sirupsen/logrus"
 
 	_ "github.com/go-sql-driver/mysql"

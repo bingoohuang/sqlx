@@ -266,7 +266,7 @@ func (r *sqlRun) eval(numIn int, f StructField, env map[string]interface{}) (str
 		return "", err
 	}
 
-	return r.Stmt, nil
+	return runSQL, nil
 }
 
 func (r *sqlRun) queryByNameRet1(numIn int, f StructField, bean reflect.Value,
@@ -332,8 +332,7 @@ func (r *sqlRun) execByNamedArg1Ret0(numIn int, f StructField, bean reflect.Valu
 			item0 = bean.Index(ii)
 		}
 
-		env := r.createNamedMap(item0)
-		runSQL, err := r.eval(numIn, f, env)
+		runSQL, err := r.eval(numIn, f, r.createNamedMap(item0))
 
 		if err != nil {
 			return nil, err
@@ -468,7 +467,14 @@ func (r *sqlRun) queryBySeqRet1(numIn int, f StructField,
 		return nil, err
 	}
 
-	rows, err := r.doQuery(runSQL, args) // nolint rowserrcheck
+	parsed, err := parseSQL(r.ID, runSQL)
+	if err != nil {
+		return nil, err
+	}
+
+	r.resetSQLParsed(parsed)
+
+	rows, err := r.doQuery(r.Stmt, args) // nolint rowserrcheck
 	if err != nil {
 		return nil, err
 	}

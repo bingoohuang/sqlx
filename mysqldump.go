@@ -56,12 +56,12 @@ UNLOCK TABLES;
 const tailTmpl = `-- Dump completed on {{ .CompleteTime }} `
 
 type mySQLDump struct {
-	db *sql.DB
+	sdb *sql.DB
 }
 
 // MySQLDump creates a MYSQL Dump based on the options supplied through the dumper.
 func MySQLDump(db *sql.DB, writer io.Writer) error {
-	m := &mySQLDump{db: db}
+	m := &mySQLDump{sdb: db}
 
 	// UrlGet server version
 	serverVersion, err := m.getServerVersion()
@@ -109,7 +109,7 @@ func (m *mySQLDump) getTables() ([]string, error) {
 	tables := make([]string, 0)
 
 	// UrlGet table list
-	rows, err := m.db.Query("SHOW TABLES")
+	rows, err := m.sdb.Query("SHOW TABLES")
 	if err != nil {
 		return tables, err
 	}
@@ -130,7 +130,7 @@ func (m *mySQLDump) getTables() ([]string, error) {
 
 func (m *mySQLDump) getServerVersion() (string, error) {
 	var serverVersion sql.NullString
-	if err := m.db.QueryRow("SELECT version()").Scan(&serverVersion); err != nil {
+	if err := m.sdb.QueryRow("SELECT version()").Scan(&serverVersion); err != nil {
 		return "", err
 	}
 
@@ -155,7 +155,7 @@ func (m *mySQLDump) createTableSQL(name string) (string, error) {
 
 	var tableSQL sql.NullString
 
-	err := m.db.QueryRow("SHOW CREATE TABLE "+name).Scan(&tableReturn, &tableSQL)
+	err := m.sdb.QueryRow("SHOW CREATE TABLE "+name).Scan(&tableReturn, &tableSQL)
 
 	if err != nil {
 		return "", err
@@ -171,7 +171,7 @@ func (m *mySQLDump) createTableSQL(name string) (string, error) {
 // nolint funlen
 func (m *mySQLDump) createTableValues(ds, de *template.Template, writer io.Writer, name string) error {
 	// #nosec G202
-	rows, err := m.db.Query("SELECT * FROM " + name)
+	rows, err := m.sdb.Query("SELECT * FROM " + name)
 	if err != nil {
 		return err
 	}

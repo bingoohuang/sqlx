@@ -492,9 +492,13 @@ func (r *sqlRun) processQueryRows(rows *sql.Rows, outTypes []reflect.Type) ([]re
 
 	out0Type := outTypes[0]
 	outSlice := reflect.Value{}
+	out0TypePtr := out0Type.Kind() == reflect.Ptr
 
-	if out0Type.Kind() == reflect.Slice {
+	switch out0Type.Kind() {
+	case reflect.Slice:
 		outSlice = reflect.MakeSlice(out0Type, 0, 0)
+		out0Type = out0Type.Elem()
+	case reflect.Ptr:
 		out0Type = out0Type.Elem()
 	}
 
@@ -506,7 +510,7 @@ func (r *sqlRun) processQueryRows(rows *sql.Rows, outTypes []reflect.Type) ([]re
 	}
 
 	for ri := 0; rows.Next() && (r.opt.QueryMaxRows <= 0 || ri < r.opt.QueryMaxRows); ri++ {
-		pointers, out := resetDests(out0Type, outTypes, mapFields)
+		pointers, out := resetDests(out0Type, out0TypePtr, outTypes, mapFields)
 		if err := rows.Scan(pointers[:len(columns)]...); err != nil {
 			return nil, fmt.Errorf("scan rows %s error %w", r.SQL, err)
 		}
@@ -537,15 +541,19 @@ func (r *sqlRun) processQueryRows(rows *sql.Rows, outTypes []reflect.Type) ([]re
 		return []reflect.Value{outSlice}, nil
 	}
 
-	return r.noRows(out0Type, outTypes)
+	return r.noRows(out0Type, out0TypePtr, outTypes)
 }
 
-func (r *sqlRun) noRows(out0Type reflect.Type, outTypes []reflect.Type) ([]reflect.Value, error) {
+func (r *sqlRun) noRows(out0Type reflect.Type, out0TypePtr bool, outTypes []reflect.Type) ([]reflect.Value, error) {
 	switch out0Type.Kind() {
 	case reflect.Map:
 		out := reflect.MakeMap(reflect.MapOf(out0Type.Key(), out0Type.Elem()))
 		return []reflect.Value{out}, nil
 	case reflect.Struct:
+		if out0TypePtr {
+			return []reflect.Value{reflect.Zero(outTypes[0])}, nil
+		}
+
 		return []reflect.Value{reflect.Indirect(reflect.New(out0Type))}, nil
 	}
 
@@ -624,7 +632,14 @@ func (p *sqlParsed) createMapFields(columns []string, out0Type reflect.Type,
 
 	for i := range columns {
 		if i < len(outTypes) {
-			mapFields[i] = &singleValue{vType: outTypes[i]}
+			vType := outTypes[i]
+			ptr := vType.Kind() == reflect.Ptr
+
+			if ptr {
+				vType = vType.Elem()
+			}
+
+			mapFields[i] = &singleValue{vType: vType, ptr: ptr}
 		} else {
 			mapFields[i] = &singleValue{vType: reflect.TypeOf("")}
 		}
@@ -747,6 +762,7 @@ func (s *mapItem) ResetParent(parent reflect.Value) { s.parent = parent }
 func (s *mapItem) Set(val reflect.Value)            { s.parent.SetMapIndex(s.k, val) }
 
 type singleValue struct {
+	ptr    bool
 	parent reflect.Value
 	vType  reflect.Type
 }
@@ -761,8 +777,8 @@ func (s *singleValue) Set(val reflect.Value) {
 	s.parent.Set(val)
 }
 
-func resetDests(out0Type reflect.Type, outTypes []reflect.Type,
-	mapFields []selectItem) ([]interface{}, []reflect.Value) {
+func resetDests(out0Type reflect.Type, out0TypePtr bool,
+	outTypes []reflect.Type, mapFields []selectItem) ([]interface{}, []reflect.Value) {
 	pointers := make([]interface{}, len(mapFields))
 
 	var out0 reflect.Value
@@ -777,8 +793,14 @@ func resetDests(out0Type reflect.Type, outTypes []reflect.Type,
 		out[0] = out0
 	case reflect.Struct:
 		hasParent = true
-		out0 = reflect.Indirect(reflect.New(out0Type))
-		out[0] = out0
+		out0Ptr := reflect.New(out0Type)
+		out0 = reflect.Indirect(out0Ptr)
+
+		if out0TypePtr {
+			out[0] = out0Ptr
+		} else {
+			out[0] = out0
+		}
 	}
 
 	for i, fv := range mapFields {

@@ -41,7 +41,7 @@ func WithError(err *error) CreateDaoOpter {
 	return CreateDaoOptFn(func(opt *CreateDaoOpt) { opt.Error = err })
 }
 
-// WithCtx specifies the context.Context to db execution processes.
+// WithCtx specifies the context.Context to sdb execution processes.
 func WithCtx(ctx context.Context) CreateDaoOpter {
 	return CreateDaoOptFn(func(opt *CreateDaoOpt) { opt.Ctx = ctx })
 }

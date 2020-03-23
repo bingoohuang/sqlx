@@ -27,7 +27,7 @@ func TestGetTablesOk(t *testing.T) {
 
 	mock.ExpectQuery("^SHOW TABLES$").WillReturnRows(rows)
 
-	m := &mySQLDump{db: db}
+	m := &mySQLDump{sdb: db}
 	result, err := m.getTables()
 
 	if err != nil {
@@ -61,7 +61,7 @@ func TestGetTablesNil(t *testing.T) {
 
 	mock.ExpectQuery("^SHOW TABLES$").WillReturnRows(rows)
 
-	m := &mySQLDump{db: db}
+	m := &mySQLDump{sdb: db}
 	result, err := m.getTables()
 
 	if err != nil {
@@ -93,7 +93,7 @@ func TestGetServerVersionOk(t *testing.T) {
 
 	mock.ExpectQuery("^SELECT version()").WillReturnRows(rows)
 
-	m := &mySQLDump{db: db}
+	m := &mySQLDump{sdb: db}
 	result, err := m.getServerVersion()
 
 	if err != nil {
@@ -128,7 +128,7 @@ func TestCreateTableSQLOk(t *testing.T) {
 
 	mock.ExpectQuery("^SHOW CREATE TABLE Test_Table$").WillReturnRows(rows)
 
-	m := &mySQLDump{db: db}
+	m := &mySQLDump{sdb: db}
 	result, err := m.createTableSQL("Test_Table")
 
 	if err != nil {
@@ -168,7 +168,7 @@ func TestCreateTableValuesOk(t *testing.T) {
 
 	var b bytes.Buffer
 
-	m := &mySQLDump{db: db}
+	m := &mySQLDump{sdb: db}
 	err = m.createTableValues(ds, de, &b, "test")
 
 	if err != nil {
@@ -214,7 +214,7 @@ func TestCreateTableValuesNil(t *testing.T) {
 
 	var b bytes.Buffer
 
-	m := &mySQLDump{db: db}
+	m := &mySQLDump{sdb: db}
 	err = m.createTableValues(ds, de, &b, "test")
 
 	if err != nil {
@@ -270,7 +270,7 @@ func TestCreateTableOk(t *testing.T) {
 
 	var b bytes.Buffer
 
-	m := &mySQLDump{db: db}
+	m := &mySQLDump{sdb: db}
 	err = m.createTable(ct, ds, de, &b, "Test_Table")
 
 	if err != nil {

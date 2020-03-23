@@ -25,6 +25,7 @@ type personDao struct {
 	Add         func(person)                   `sql:"insert into person(id, age) values(:id, :age)"`
 	AddAll      func(...person)                `sql:"insert into person(id, age) values(:id, :age)"`
 	Find        func(id string) person         `sql:"select id, age from person where id=:1"`
+	Find2       func(id string) *person        `sql:"select id, age from person where id=:1"`
 	ListAll     func() []person                `sql:"select id, age from person"`
 	ListByID    func(string) []person          `sql:"select id, age from person where id=:1"`
 	Delete      func(string) int               `sql:"delete from person where id=:1"`
@@ -44,10 +45,14 @@ func TestDao(t *testing.T) {
 	dao.Add(person{"100", 100})
 	// 查找
 	that.Equal(person{"100", 100}, dao.Find("100"))
+	that.Equal(person{"100", 100}, *dao.Find2("100"))
 	// 刪除
 	that.Equal(1, dao.Delete("100"))
 	// 再找，找不到，返回零值
 	that.Zero(dao.Find("100"))
+	// 再找，找不到，返回零值
+	v := dao.Find2("100")
+	that.Nil(v)
 	// 插入
 	dao.Add(person{"200", 200})
 	// 多值插入

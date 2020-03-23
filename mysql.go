@@ -21,7 +21,7 @@ func (m *MySQLMore) Matches() bool { return m.dbDriver == "mysql" }
 
 // EnhanceURI 增强URI
 func (m *MySQLMore) EnhanceURI(dbURI string) string {
-	// user:pass@tcp(192.168.136.90:3307)/db?charset=utf8mb4&parseTime=true&loc=Local
+	// user:pass@tcp(192.168.136.90:3307)/sdb?charset=utf8mb4&parseTime=true&loc=Local
 	// refer
 	// 1. https://github.com/go-sql-driver/mysql
 	// 2. https://gorm.io/docs/connecting_to_the_database.html

@@ -13,7 +13,7 @@ import (
 
 // CompatibleMySQLDs make mysql datasource be compatible with raw， mysql or gossh host format.
 func CompatibleMySQLDs(s string) string {
-	// user:pass@tcp(localhost:3306)/db?charset=utf8mb4&parseTime=true&loc=Local
+	// user:pass@tcp(localhost:3306)/sdb?charset=utf8mb4&parseTime=true&loc=Local
 	if strings.Contains(s, "@tcp") {
 		return s
 	}
@@ -24,7 +24,7 @@ func CompatibleMySQLDs(s string) string {
 		return compatibleMySQLClientCmd(s)
 	}
 
-	// 127.0.0.1:9633 root/8BE4 [db=db]
+	// 127.0.0.1:9633 root/8BE4 [sdb=sdb]
 	if strings.Contains(s, ":") || strings.Contains(s, "/") {
 		if v, ok := compatibleGoSSHHost(s); ok {
 			return v
@@ -35,7 +35,7 @@ func CompatibleMySQLDs(s string) string {
 }
 
 func compatibleGoSSHHost(s string) (string, bool) {
-	// 127.0.0.1:9633 root/8BE4 [db=db]
+	// 127.0.0.1:9633 root/8BE4 [sdb=sdb]
 	fields := str.FieldsX(s, "", "", 3)
 	if len(fields) < 2 { // nolint gomnd
 		return "", false
@@ -46,7 +46,7 @@ func compatibleGoSSHHost(s string) (string, bool) {
 	props := parseProps(fields)
 	db := ""
 
-	if v, ok := props["db"]; ok {
+	if v, ok := props["sdb"]; ok {
 		db = v
 	}
 

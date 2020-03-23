@@ -748,7 +748,7 @@ func (s *structItem) Type() reflect.Type               { return s.StructField.Ty
 func (s *structItem) ResetParent(parent reflect.Value) { s.parent = parent }
 func (s *structItem) Set(val reflect.Value) {
 	f := s.parent.FieldByName(s.StructField.Name)
-	f.Set(val)
+	f.Set(val.Convert(f.Type()))
 }
 
 type mapItem struct {

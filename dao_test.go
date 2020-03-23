@@ -223,6 +223,13 @@ type person5 struct {
 	Addr  sql.NullString
 }
 
+type Addr string
+
+// person 结构体，对应到person表字段
+type person6 struct {
+	Addr Addr
+}
+
 // personDao4 定义对person表操作的所有方法
 type personDao4 struct {
 	CreateTable func()                       `sql:"create table person(id varchar(100), age int, addr varchar(10) default 'bj')"`
@@ -230,6 +237,7 @@ type personDao4 struct {
 	Add         func(map[string]interface{}) `sql:"insert into person(id, age, addr) values(:id, :age, :addr)"`
 	FindByAge1  func(int) person4            `sql:"select id, age, addr from person where age = :1"`
 	FindByAge2  func(int) person5            `sqlName:"FindByAge1"`
+	FindByAge3  func(int) person6            `sqlName:"FindByAge1"`
 }
 
 func TestNullString(t *testing.T) {
@@ -246,6 +254,9 @@ func TestNullString(t *testing.T) {
 
 	p2 := dao.FindByAge2(100)
 	that.Equal(person5{ID: "", Age: 100, Addr: sql.NullString{String: "zags", Valid: true}}, p2)
+
+	p3 := dao.FindByAge3(100)
+	that.Equal(person6{Addr: "zags"}, p3)
 }
 
 // personMap 结构体，对应到person表字段

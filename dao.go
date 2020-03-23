@@ -359,11 +359,7 @@ func (r *sqlRun) execByNamedArg1Ret0(numIn int, f StructField, bean reflect.Valu
 			return nil, err
 		}
 
-		if isBeanSlice {
-			r.logPrepare(runSQL, vars)
-		} else {
-			r.logPrepare(runSQL, vars[0])
-		}
+		r.logPrepare(runSQL, vars)
 
 		if _, err := pr.ExecContext(r.opt.Ctx, vars...); err != nil {
 			return nil, fmt.Errorf("failed to execute %s error %w", r.SQL, err)

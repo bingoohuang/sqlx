@@ -3,7 +3,7 @@ all: default test
 
 gosec:
 	go get github.com/securego/gosec/cmd/gosec
-security:
+sec:
 	@gosec ./...
 	@echo "[OK] Go security check was completed!"
 

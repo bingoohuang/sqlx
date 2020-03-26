@@ -118,12 +118,9 @@ func execNonQuery(db SQLExec, sqlStr string, firstKey string) ExecResult {
 
 // IsQuerySQL tests a sql is a query or not
 func IsQuerySQL(sql string) (string, bool) {
-	key := ""
-	if fields := strings.Fields(strings.TrimSpace(sql)); len(fields) > 0 {
-		key = strings.ToUpper(fields[0])
-	}
+	key := FirstWord(sql)
 
-	switch key {
+	switch strings.ToUpper(key) {
 	case "INSERT", "DELETE", "UPDATE", "SET", "REPLACE":
 		return key, false
 	case "SELECT", "SHOW", "DESC", "DESCRIBE", "EXPLAIN":
@@ -131,6 +128,15 @@ func IsQuerySQL(sql string) (string, bool) {
 	default:
 		return key, false
 	}
+}
+
+// FirstWord returns the first word of the SQL statement s.
+func FirstWord(s string) string {
+	if fields := strings.Fields(strings.TrimSpace(s)); len(fields) > 0 {
+		return fields[0]
+	}
+
+	return ""
 }
 
 // IfElse if else ...

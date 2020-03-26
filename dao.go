@@ -142,29 +142,8 @@ func (r *sqlRun) createFn(f StructField) error {
 		numOut--
 	}
 
-	var fn func([]reflect.Value) ([]reflect.Value, error)
-
-	switch {
-	case numIn == 0 && numOut == 0:
-		fn = func([]reflect.Value) ([]reflect.Value, error) {
-			return r.exec(numIn, f)
-		}
-	case numIn == 1 && r.isBindBy(byName) && numOut == 0:
-		fn = func(args []reflect.Value) ([]reflect.Value, error) { return r.execByNamedArg1Ret0(numIn, f, args[0]) }
-	case r.isBindBy(bySeq, byAuto) && numOut == 0:
-		fn = func(args []reflect.Value) ([]reflect.Value, error) { return r.execBySeqArgsRet0(numIn, f, args) }
-	case r.IsQuery && r.isBindBy(bySeq, byAuto, byNone) && numOut >= 1:
-		outTypes := makeOutTypes(f.Type, numOut)
-		fn = func(args []reflect.Value) ([]reflect.Value, error) { return r.queryBySeqRet1(numIn, f, outTypes, args) }
-	case numIn == 1 && r.IsQuery && r.isBindBy(byName) && numOut >= 1:
-		outTypes := makeOutTypes(f.Type, numOut)
-		fn = func(args []reflect.Value) ([]reflect.Value, error) {
-			return r.queryByNameRet1(numIn, f, args[0], outTypes)
-		}
-	case !r.IsQuery && r.isBindBy(bySeq, byAuto) && numOut == 1:
-		out := f.Type.Out(0)
-		fn = func(args []reflect.Value) ([]reflect.Value, error) { return r.execBySeqRet1(numIn, f, out, args) }
-	default:
+	fn := r.MakeFunc(f, numIn, numOut)
+	if fn == nil {
 		err := fmt.Errorf("unsupportd func %s %v", f.Name, f.Type)
 		r.logError(err)
 
@@ -194,6 +173,35 @@ func (r *sqlRun) createFn(f StructField) error {
 	return nil
 }
 
+func (r *sqlRun) MakeFunc(f StructField, numIn int, numOut int) func([]reflect.Value) ([]reflect.Value, error) {
+	outTypes := makeOutTypes(f.Type, numOut)
+
+	switch {
+	case !r.IsQuery && numIn == 0 && numOut == 0:
+		return func([]reflect.Value) ([]reflect.Value, error) {
+			return r.exec(numIn, f)
+		}
+	case !r.IsQuery && numIn == 1 && r.isBindBy(byName):
+		return func(args []reflect.Value) ([]reflect.Value, error) {
+			return r.execByNamedArg1Ret0(numIn, f, args[0], outTypes)
+		}
+	case !r.IsQuery && r.isBindBy(bySeq, byAuto):
+		return func(args []reflect.Value) ([]reflect.Value, error) {
+			return r.execBySeq(numIn, f, outTypes, args)
+		}
+	case r.IsQuery && r.isBindBy(bySeq, byAuto, byNone) && numOut >= 1:
+		return func(args []reflect.Value) ([]reflect.Value, error) {
+			return r.queryBySeqRet1(numIn, f, outTypes, args)
+		}
+	case r.IsQuery && numIn == 1 && r.isBindBy(byName) && numOut >= 1:
+		return func(args []reflect.Value) ([]reflect.Value, error) {
+			return r.queryByNameRet1(numIn, f, args[0], outTypes)
+		}
+	}
+
+	return nil
+}
+
 func makeOutTypes(outType reflect.Type, numOut int) []reflect.Type {
 	rt := make([]reflect.Type, numOut)
 
@@ -219,23 +227,6 @@ func (r *sqlRun) exec(numIn int, f StructField) ([]reflect.Value, error) {
 
 	_, err = r.ExecContext(r.opt.Ctx, runSQL)
 
-	if err != nil {
-		return nil, fmt.Errorf("execute %s error %w", r.SQL, err)
-	}
-
-	return []reflect.Value{}, nil
-}
-
-func (r *sqlRun) execBySeqArgsRet0(numIn int, f StructField, args []reflect.Value) ([]reflect.Value, error) {
-	runSQL, err := r.evalSeq(numIn, f, args)
-	if err != nil {
-		return nil, err
-	}
-
-	vars := r.makeVars(args)
-	r.logPrepare(runSQL, vars)
-
-	_, err = r.ExecContext(r.opt.Ctx, runSQL, vars...)
 	if err != nil {
 		return nil, fmt.Errorf("execute %s error %w", r.SQL, err)
 	}
@@ -301,7 +292,8 @@ func (r *sqlRun) queryByNameRet1(numIn int, f StructField, bean reflect.Value,
 }
 
 // nolint funlen
-func (r *sqlRun) execByNamedArg1Ret0(numIn int, f StructField, bean reflect.Value) ([]reflect.Value, error) {
+func (r *sqlRun) execByNamedArg1Ret0(numIn int, f StructField,
+	bean reflect.Value, outTypes []reflect.Type) ([]reflect.Value, error) {
 	item0 := bean
 	itemSize := 1
 	isBeanSlice := bean.Type().Kind() == reflect.Slice
@@ -316,16 +308,16 @@ func (r *sqlRun) execByNamedArg1Ret0(numIn int, f StructField, bean reflect.Valu
 	}
 
 	var (
-		err error
-		pr  *sql.Stmt
+		err        error
+		pr         *sql.Stmt
+		lastResult sql.Result
+		lastSQL    string
 	)
 
 	tx, err := r.BeginTx(r.opt.Ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin tx %w", err)
 	}
-
-	lastSQL := ""
 
 	for ii := 0; ii < itemSize; ii++ {
 		if ii > 0 {
@@ -361,13 +353,21 @@ func (r *sqlRun) execByNamedArg1Ret0(numIn int, f StructField, bean reflect.Valu
 
 		r.logPrepare(runSQL, vars)
 
-		if _, err := pr.ExecContext(r.opt.Ctx, vars...); err != nil {
+		lastResult, err = pr.ExecContext(r.opt.Ctx, vars...)
+
+		if err != nil {
 			return nil, fmt.Errorf("failed to execute %s error %w", r.SQL, err)
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commiterror %w", err)
+	}
+
+	if itemSize == 1 && len(outTypes) == 1 && outTypes[0].ConvertibleTo(reflect.TypeOf(int64(0))) {
+		lastInsertID, _ := lastResult.LastInsertId()
+		lastInsertIDValue := reflect.ValueOf(lastInsertID).Convert(outTypes[0])
+		return []reflect.Value{lastInsertIDValue}, nil
 	}
 
 	return []reflect.Value{}, nil
@@ -433,8 +433,8 @@ func (p *sqlParsed) logPrepare(runSQL string, vars interface{}) {
 	p.opt.Logger.LogStart(p.ID, runSQL, vars)
 }
 
-func (r *sqlRun) execBySeqRet1(numIn int, f StructField,
-	outType reflect.Type, args []reflect.Value) ([]reflect.Value, error) {
+func (r *sqlRun) execBySeq(numIn int, f StructField,
+	outTypes []reflect.Type, args []reflect.Value) ([]reflect.Value, error) {
 	runSQL, err := r.evalSeq(numIn, f, args)
 	if err != nil {
 		return nil, err
@@ -448,12 +448,12 @@ func (r *sqlRun) execBySeqRet1(numIn int, f StructField,
 		return nil, fmt.Errorf("execute %s error %w", r.SQL, err)
 	}
 
-	affected, err := convertRowsAffected(result, runSQL, outType)
+	results, err := convertExecResult(result, runSQL, outTypes)
 	if err != nil {
 		return nil, fmt.Errorf("execute %s error %w", r.SQL, err)
 	}
 
-	return []reflect.Value{affected}, nil
+	return results, nil
 }
 
 func (r *sqlRun) queryBySeqRet1(numIn int, f StructField,
@@ -689,18 +689,42 @@ func (p *sqlParsed) makeVars(args []reflect.Value) []interface{} {
 
 func (p *sqlParsed) logError(err error) { p.opt.Logger.LogError(err) }
 
-func convertRowsAffected(result sql.Result, stmt string, outType reflect.Type) (reflect.Value, error) {
-	rowsAffected, err := result.RowsAffected()
+func convertExecResult(result sql.Result, stmt string, outTypes []reflect.Type) ([]reflect.Value, error) {
+	if len(outTypes) == 0 {
+		return []reflect.Value{}, nil
+	}
+
+	lastInsertIDVal, err := result.LastInsertId()
 	if err != nil {
-		return reflect.Value{}, fmt.Errorf("rowsAffected %s error %w", stmt, err)
+		return nil, fmt.Errorf("LastInsertId %s error %w", stmt, err)
 	}
 
-	rowsAffectedV := reflect.ValueOf(rowsAffected)
-	if rowsAffectedV.Type().ConvertibleTo(outType) {
-		return rowsAffectedV.Convert(outType), nil
+	rowsAffectedVal, err := result.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("RowsAffected %s error %w", stmt, err)
 	}
 
-	return reflect.Value{}, fmt.Errorf("unable to convert %v to type %v", rowsAffected, outType)
+	firstWord := strings.ToUpper(FirstWord(stmt))
+	results := make([]reflect.Value, 0)
+
+	if len(outTypes) == 1 { // nolint gomnd
+		if firstWord == "INSERT" { // nolint goconst
+			results = append(results, reflect.ValueOf(lastInsertIDVal).Convert(outTypes[0]))
+		} else {
+			results = append(results, reflect.ValueOf(rowsAffectedVal).Convert(outTypes[0]))
+		}
+
+		return results, nil
+	}
+
+	if len(outTypes) == 2 { // nolint gomnd
+		results = append(results, reflect.ValueOf(lastInsertIDVal).Convert(outTypes[0]))
+		results = append(results, reflect.ValueOf(rowsAffectedVal).Convert(outTypes[0]))
+
+		return results, nil
+	}
+
+	return nil, fmt.Errorf("unsupported returned type %v", outTypes)
 }
 
 func replaceQuestionMark4Postgres(s string) string {

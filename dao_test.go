@@ -413,3 +413,32 @@ func TestMapDynamic(t *testing.T) {
 	that.Equal("bjca", dao.GetAddrStruct2(personMap{ID: "40685"}))
 	that.Equal("acjb", dao.GetAddrStruct2(personMap{ID: "40685", Age: 600}))
 }
+
+const dotSQLLastInsertID = `
+-- name: CreateTable
+create table person(id INTEGER PRIMARY KEY AUTOINCREMENT, age int, addr varchar(10));
+
+-- name: Add
+insert into person( age, addr) values( :age, :addr);
+;
+`
+
+type personLastInsertID struct {
+	CreateTable func()
+	Add         func(m map[string]interface{}) int
+	Logger      sqlx.DaoLogger
+	Error       error
+}
+
+func TestLastInsertID(t *testing.T) {
+	that := assert.New(t)
+
+	logrus.SetLevel(logrus.DebugLevel)
+	// 生成DAO，自动创建dao结构体中的函数字段
+	dao := &personLastInsertID{Logger: &sqlx.DaoLogrus{}}
+	that.Nil(sqlx.CreateDao(openDB(t), dao, sqlx.WithSQLStr(dotSQLLastInsertID)))
+
+	dao.CreateTable()
+	that.True(dao.Add(map[string]interface{}{"age": 500, "addr": "bjca"}) > 0)
+	that.True(dao.Add(map[string]interface{}{"age": 600, "addr": "acjb"}) > 0)
+}

@@ -55,7 +55,7 @@ func createLogger(v reflect.Value, option *CreateDaoOpt) {
 			continue
 		}
 
-		if goreflect.ImplType(f.Type, _daoLoggerType) {
+		if goreflect.ImplType(f.Type, _daoLoggerType) && !fv.IsNil() {
 			option.Logger = fv.Interface().(DaoLogger)
 			return
 		}

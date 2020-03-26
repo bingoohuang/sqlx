@@ -36,6 +36,8 @@ type Column struct {
 	Comment    string `name:"COLUMN_COMMENT"`
 	Type       string `name:"COLUMN_TYPE"` // eg. varchar(32)
 	DataType   string `name:"DATA_TYPE"`   // eg. varchar
+	ColumnKey  string `name:"COLUMN_KEY"`  // eg. PRI, MUL, UNI
+	Extra      string `name:"EXTRA"`       // eg. auto_increment
 }
 
 // nolint lll
@@ -150,12 +152,15 @@ func newDaoGenerator(table Table, pkg string) *daoGenerator {
 }
 
 type daoGenerator struct {
-	table         Table
-	pkg           string
-	structColumns []string
-	columns       []Column
-	imports       map[string]bool
-	b             bytes.Buffer
+	table          Table
+	pkg            string
+	structColumns  []string
+	columns        []Column
+	imports        map[string]bool
+	b              bytes.Buffer
+	keyColumns     []Column
+	noneKeyColumns []Column
+	autoIncrement  bool
 }
 
 func (g *daoGenerator) complete() {
@@ -175,17 +180,61 @@ func line(s string) string {
 	return s
 }
 func (g *daoGenerator) gen(w io.Writer) {
+	g.prepare()
+
 	g.writePackage()
 	g.writeImports()
 	g.writeStruct()
+	g.writeDAO()
+	g.writeDAOCreator()
 	g.writeSQL()
 
 	_, _ = g.b.WriteTo(w)
 }
 
+func (g *daoGenerator) writeDAOCreator() {
+	beanName := strcase.ToCamel(g.table.Name)
+	daoName := beanName + "DAO"
+	structName := "Create" + daoName
+	g.b.WriteString("// " + structName + " represents DAO creator for table " + g.table.Name + ".\n")
+	g.b.WriteString("func " + structName + " (db *sql.DB) (*" + daoName + ", error) {\n")
+	g.b.WriteString("\tdao := &" + daoName + "{Logger: &sqlx.DaoLogrus{}}\n")
+	g.b.WriteString("\n")
+	// nolint lll
+	g.b.WriteString("\tif err := sqlx.CreateDao(db, dao, sqlx.WithSQLStr(" + strcase.ToCamelLower(g.table.Name) + "SQL)); err != nil {\n")
+	g.b.WriteString("\t\treturn nil, err;\n")
+	g.b.WriteString("\t}\n")
+	g.b.WriteString("\n")
+	g.b.WriteString("\treturn dao, nil\n")
+	g.b.WriteString("}\n\n")
+}
+
+func (g *daoGenerator) writeDAO() {
+	beanName := strcase.ToCamel(g.table.Name)
+	structName := beanName + "DAO"
+	g.b.WriteString("// " + structName + " represents DAO operations for table " + g.table.Name + ".\n")
+
+	g.b.WriteString("type " + structName + " struct {\n")
+
+	if g.autoIncrement {
+		g.b.WriteString("\tInsert func(" + beanName + ") (lastInsertID int64) `sqlName:\"Insert" + beanName + "\"`\n")
+	} else {
+		g.b.WriteString("\tInsert func(" + beanName + ")int `sqlName:\"Insert" + beanName + "\"`\n")
+	}
+
+	g.b.WriteString("\tDelete func(" + beanName + ")(effectedRows int) `sqlName:\"Delete" + beanName + "\"`\n")
+	g.b.WriteString("\tUpdate func(" + beanName + ")(effectedRows int) `sqlName:\"Update" + beanName + "\"`\n")
+	g.b.WriteString("\tFind func(" + beanName + ")(" + beanName + ", error) `sqlName:\"Find" + beanName + "\"`\n")
+	g.b.WriteString("\tSelectAll func(" + beanName + ")[]" + beanName + " `sqlName:\"SelectAll" + beanName + "\"`\n")
+
+	g.b.WriteString("\tLogger sqlx.DaoLogger\n")
+	g.b.WriteString("\tErr error\n")
+	g.b.WriteString("}\n\n")
+}
+
 func (g *daoGenerator) writeStruct() {
 	structName := strcase.ToCamel(g.table.Name)
-	g.b.WriteString("// " + structName + " represents table " + g.table.Name + ".\n")
+	g.b.WriteString("// " + structName + " represents a structure mapping for row of table " + g.table.Name + ".\n")
 
 	if tc := line(g.table.Comment); tc != "" {
 		g.b.WriteString("// " + tc + "\n")
@@ -198,7 +247,7 @@ func (g *daoGenerator) writeStruct() {
 		g.b.WriteString("\n")
 	}
 
-	g.b.WriteString("}\n")
+	g.b.WriteString("}\n\n")
 }
 
 func (g *daoGenerator) writeImports() {
@@ -216,11 +265,14 @@ func (g *daoGenerator) writeImports() {
 
 	g.b.WriteString("import (\n")
 
+	g.b.WriteString("\t \"database/sql\"\n")
+	g.b.WriteString("\t \"github.com/bingoohuang/sqlx\"\n")
+
 	for _, p := range importPkgs {
 		g.b.WriteString("\t \"" + p + "\"\n")
 	}
 
-	g.b.WriteString(")\n")
+	g.b.WriteString(")\n\n")
 }
 
 func (g *daoGenerator) writePackage() {
@@ -256,24 +308,72 @@ func (g *daoGenerator) addColumn(c Column) {
 func (g *daoGenerator) writeSQL() {
 	g.b.WriteString("const " + strcase.ToCamelLower(g.table.Name) + "SQL = `")
 
-	g.b.WriteString("\n-- name: SelectAll\nselect ")
+	g.writeSQLInsert()
+	g.writeSQLDelete()
+	g.writeSQLUpdate()
+	g.writeSQLSelectAll()
+	g.writeSQLFind()
+
+	g.b.WriteString("`\n\n")
+}
+
+func (g *daoGenerator) writeSQLUpdate() {
+	g.b.WriteString("\n-- name: Update" + strcase.ToCamel(g.table.Name) + "\nupdate " + g.table.Name + "\nset\n")
 
 	i := 0
-	for _, c := range g.columns {
+
+	for _, c := range g.noneKeyColumns {
 		if i > 0 {
-			g.b.WriteString(", ")
+			g.b.WriteString(",")
+		} else {
+			g.b.WriteString(" ")
 		}
 
-		g.b.WriteString(c.ColumnName)
+		g.b.WriteString("    " + c.ColumnName + " = :" + c.ColumnName + "\n")
 		i++
 	}
 
-	g.b.WriteString("\nfrom " + g.table.Name)
-	g.b.WriteString("\n")
+	g.b.WriteString("where\n")
 
-	g.b.WriteString("\n-- name: Add\ninsert into " + g.table.Name + "\n")
+	g.genWhereColumns()
 
-	i = 0
+	g.b.WriteString(";\n")
+}
+
+func (g *daoGenerator) writeSQLDelete() {
+	g.b.WriteString("\n-- name: Delete" + strcase.ToCamel(g.table.Name) + "\ndelete from " + g.table.Name + "\nwhere\n")
+
+	g.genWhereColumns()
+
+	g.b.WriteString(";\n")
+}
+
+func (g *daoGenerator) genWhereColumns() {
+	i := 0
+
+	for _, c := range g.whereColumns() {
+		if i > 0 {
+			g.b.WriteString(",")
+		} else {
+			g.b.WriteString(" ")
+		}
+
+		g.b.WriteString("    " + c.ColumnName + " = :" + c.ColumnName + "\n")
+		i++
+	}
+}
+
+func (g *daoGenerator) whereColumns() []Column {
+	if len(g.keyColumns) > 0 {
+		return g.keyColumns
+	}
+
+	return g.columns
+}
+func (g *daoGenerator) writeSQLInsert() {
+	g.b.WriteString("\n-- name: Insert" + strcase.ToCamel(g.table.Name) + "\ninsert into " + g.table.Name + "\n")
+
+	i := 0
 	for _, c := range g.columns {
 		if i == 0 {
 			g.b.WriteString("(")
@@ -301,8 +401,72 @@ func (g *daoGenerator) writeSQL() {
 		i++
 	}
 
-	g.b.WriteString(")\n")
-	g.b.WriteString("`\n")
+	g.b.WriteString(");\n")
+}
+
+func (g *daoGenerator) writeSQLSelectAll() {
+	g.b.WriteString("\n-- name: SelectAll" + strcase.ToCamel(g.table.Name) + "\nselect ")
+
+	i := 0
+	for _, c := range g.columns {
+		if i > 0 {
+			g.b.WriteString(", ")
+		}
+
+		g.b.WriteString(c.ColumnName)
+		i++
+	}
+
+	g.b.WriteString("\nfrom " + g.table.Name)
+	g.b.WriteString(";\n")
+}
+
+func (g *daoGenerator) writeSQLFind() {
+	if len(g.keyColumns) == 0 {
+		return
+	}
+
+	g.b.WriteString("\n-- name: Find" + strcase.ToCamel(g.table.Name) + "\nselect ")
+
+	i := 0
+	for _, c := range g.columns {
+		if i > 0 {
+			g.b.WriteString(", ")
+		}
+
+		g.b.WriteString(c.ColumnName)
+		i++
+	}
+
+	g.b.WriteString("\nfrom " + g.table.Name + "\nwhere \n")
+	g.genWhereColumns()
+	g.b.WriteString(";\n")
+}
+
+func (g *daoGenerator) prepare() {
+	g.prepareKeyColumns()
+	g.findAutoIncrement()
+}
+
+func (g *daoGenerator) prepareKeyColumns() {
+	g.keyColumns = make([]Column, 0, len(g.columns))
+	g.noneKeyColumns = make([]Column, 0, len(g.columns))
+
+	for _, c := range g.columns {
+		if c.ColumnKey == "PRI" || c.ColumnKey == "UNI" {
+			g.keyColumns = append(g.keyColumns, c)
+		} else {
+			g.noneKeyColumns = append(g.noneKeyColumns, c)
+		}
+	}
+}
+
+func (g *daoGenerator) findAutoIncrement() {
+	for _, c := range g.columns {
+		if strings.Contains(c.Extra, "auto_increment") {
+			g.autoIncrement = true
+		}
+	}
 }
 
 // nolint gomnd

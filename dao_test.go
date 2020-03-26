@@ -162,7 +162,7 @@ type personDao3 struct {
 	CreateTable func()
 	AddAll      func(...person)
 	ListAll     func() []person
-	Logger      *sqlx.DaoLogrus
+	Logger      sqlx.DaoLogger
 }
 
 const dotSQL = `

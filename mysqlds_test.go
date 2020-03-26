@@ -33,4 +33,13 @@ func TestCompatibleDs(t *testing.T) {
 
 	ds = CompatibleMySQLDs("127.0.0.1:9633 root/8BE4 sdb=test")
 	assert.Equal(t, `root:8BE4@tcp(127.0.0.1:9633)/test?charset=utf8mb4&parseTime=true&loc=Local`, ds)
+
+	ds = CompatibleMySQLDs("root:8BE4@127.0.0.1:9633/test")
+	assert.Equal(t, `root:8BE4@tcp(127.0.0.1:9633)/test?charset=utf8mb4&parseTime=true&loc=Local`, ds)
+
+	ds = CompatibleMySQLDs("root:8BE4@127.0.0.1/test")
+	assert.Equal(t, `root:8BE4@tcp(127.0.0.1:3306)/test?charset=utf8mb4&parseTime=true&loc=Local`, ds)
+
+	ds = CompatibleMySQLDs("root:8BE4@127.0.0.1")
+	assert.Equal(t, `root:8BE4@tcp(127.0.0.1:3306)/?charset=utf8mb4&parseTime=true&loc=Local`, ds)
 }

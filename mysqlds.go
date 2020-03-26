@@ -18,6 +18,14 @@ func CompatibleMySQLDs(s string) string {
 		return s
 	}
 
+	// user:pass@localhost/dbname
+	// https://github.com/xo/dburl
+	if strings.Contains(s, ":") && strings.Contains(s, "@") {
+		if v, ok := compatibleDBURL(s); ok {
+			return v
+		}
+	}
+
 	// MYSQL_PWD=8BE4 mysql -h 127.0.0.1 -P 9633 -u root
 	// -u, --user=name     User for login if not current user.
 	if strings.Contains(s, " -u") || strings.Contains(s, " --user") {
@@ -32,6 +40,28 @@ func CompatibleMySQLDs(s string) string {
 	}
 
 	return s
+}
+
+func compatibleDBURL(s string) (string, bool) {
+	// user:pass@localhost/dbname
+	// betaapiadmin:xx@123.206.185.162:3306/metrics_ump
+	atPos := strings.Index(s, "@")
+	up := s[:atPos]
+	user, password := str.Split2(up, ":", true, true)
+
+	db := ""
+	right := s[atPos+1:]
+	slashPos := strings.Index(right, "/")
+
+	if slashPos > 0 {
+		db = right[slashPos+1:]
+		right = right[:slashPos]
+	}
+
+	host, port := parseHostPort(right, "3306")
+
+	return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=true&loc=Local",
+		user, password, host, port, db), true
 }
 
 func compatibleGoSSHHost(s string) (string, bool) {

@@ -420,12 +420,17 @@ create table person(id INTEGER PRIMARY KEY AUTOINCREMENT, age int, addr varchar(
 
 -- name: Add
 insert into person( age, addr) values( :age, :addr);
+
+-- name: Update
+update person set age = :age, addr = :addr where id = :id;
 ;
 `
 
 type personLastInsertID struct {
 	CreateTable func()
-	Add         func(m map[string]interface{}) int
+	Add         func(m map[string]interface{}) (lastInsertID int)
+	Update      func(m map[string]interface{}) (effectedRows int)
+	Update2     func(m map[string]interface{}) (effectedRows, lastInsertID int) `sqlName:"Update"`
 	Logger      sqlx.DaoLogger
 	Error       error
 }
@@ -440,5 +445,10 @@ func TestLastInsertID(t *testing.T) {
 
 	dao.CreateTable()
 	that.True(dao.Add(map[string]interface{}{"age": 500, "addr": "bjca"}) > 0)
-	that.True(dao.Add(map[string]interface{}{"age": 600, "addr": "acjb"}) > 0)
+	lastInsertID := dao.Add(map[string]interface{}{"age": 600, "addr": "acjb"})
+	that.True(lastInsertID > 0)
+	that.Equal(1, dao.Update(map[string]interface{}{"id": lastInsertID, "age": 601, "addr": "xx"}))
+	effectedRows, insertID := dao.Update2(map[string]interface{}{"id": lastInsertID, "age": 602, "addr": "yy"})
+	that.Equal(1, effectedRows)
+	that.Equal(lastInsertID, insertID)
 }

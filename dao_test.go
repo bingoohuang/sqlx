@@ -291,11 +291,12 @@ type personDaoMap struct {
 	FindAsMap1  func(id string) map[string]string      `sqlName:"Find"`
 	FindAsMap2  func(id string) map[string]interface{} `sqlName:"Find"`
 
-	Count   func() (count int)
-	GetAddr func(id string) (addr string) `sql:"select addr from person where id=:1"`
-	Get2    func(id string) (pid, addr string)
-	Get3    func(id string) (pid string)                     `sqlName:"Get2"`
-	Get4    func(id string) (pid, addr, nos string, noi int) `sqlName:"Get2"`
+	Count    func() (count int)
+	GetAddr  func(id string) (addr string) `sql:"select addr from person where id=:1"`
+	GetAddr2 func(id string) (addr Addr)   `sqlName:"GetAddr"`
+	Get2     func(id string) (pid, addr string)
+	Get3     func(id string) (pid string)                     `sqlName:"Get2"`
+	Get4     func(id string) (pid, addr, nos string, noi int) `sqlName:"Get2"`
 
 	Logger sqlx.DaoLogger
 	Error  error
@@ -321,6 +322,7 @@ func TestMapArg(t *testing.T) {
 
 	that.Equal(2, dao.Count())
 	that.Equal("bjca", dao.GetAddr("40685"))
+	that.Equal(Addr("bjca"), dao.GetAddr2("40685"))
 
 	id, addr := dao.Get2("40685")
 	that.Equal("40685", id)

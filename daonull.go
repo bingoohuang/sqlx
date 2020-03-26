@@ -42,7 +42,7 @@ func (n *NullAny) Scan(value interface{}) error {
 			return err
 		}
 
-		n.Val = reflect.ValueOf(sn.String)
+		n.Val = reflect.ValueOf(sn.String).Convert(n.Type)
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32:
 		sn := &sql.NullInt32{}
@@ -57,9 +57,9 @@ func (n *NullAny) Scan(value interface{}) error {
 			return err
 		}
 
-		n.Val = reflect.ValueOf(sn.Bool)
+		n.Val = reflect.ValueOf(sn.Bool).Convert(n.Type)
 	case reflect.Interface:
-		n.Val = reflect.ValueOf(value)
+		n.Val = reflect.ValueOf(value).Convert(n.Type)
 	default:
 		sn := &sql.NullString{}
 		if err := sn.Scan(value); err != nil {

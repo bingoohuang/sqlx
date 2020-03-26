@@ -94,7 +94,7 @@ func main() {
 
 	columns := dao.Columns(schema)
 	pkg := strings.ToLower(schema)
-	_ = os.MkdirAll(pkg, 0755)
+	_ = os.MkdirAll(pkg, 0750)
 
 	gen(columns, tablesMap, pkg)
 }

@@ -447,8 +447,7 @@ func TestLastInsertID(t *testing.T) {
 	logrus.SetLevel(logrus.DebugLevel)
 	// 生成DAO，自动创建dao结构体中的函数字段
 	dao := &personLastInsertID{Logger: &sqlx.DaoLogrus{}}
-	sqlx.DB = openDB(t)
-	that.Nil(sqlx.CreateDao(dao, sqlx.WithSQLStr(dotSQLLastInsertID)))
+	that.Nil(sqlx.CreateDao(dao, sqlx.WithDB(openDB(t)), sqlx.WithSQLStr(dotSQLLastInsertID)))
 
 	dao.CreateTable()
 	that.True(dao.Add(map[string]interface{}{"age": 500, "addr": "bjca"}) > 0)

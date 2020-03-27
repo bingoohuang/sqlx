@@ -58,9 +58,8 @@ type sqlParsed struct {
 	MaxSeq  int
 	IsQuery bool
 
-	opt       *CreateDaoOpt
-	sqlFilter func(s string) string
-	Stmt      string
+	opt  *CreateDaoOpt
+	Stmt string
 }
 
 func (p sqlParsed) isBindBy(by ...bindBy) bool {
@@ -101,6 +100,10 @@ func (p *sqlParsed) parseSQL(sqlName, stmt string) error {
 		p.Vars = append(p.Vars, v)
 		return "?"
 	})
+
+	if p.opt != nil && p.opt.DBGetter != nil {
+		p.Stmt = convertSQLBindMarks(p.opt.DBGetter.GetDB(), p.Stmt)
+	}
 
 	var err error
 

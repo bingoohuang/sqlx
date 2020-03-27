@@ -18,7 +18,7 @@ func CompatibleMySQLDs(s string) string {
 		return s
 	}
 
-	// user:pass@localhost/dbname
+	// user:pass@localhost:3306/dbname
 	// https://github.com/xo/dburl
 	if strings.Contains(s, ":") && strings.Contains(s, "@") {
 		if v, ok := compatibleDBURL(s); ok {

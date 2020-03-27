@@ -2,6 +2,7 @@ package sqlx
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"reflect"
 
@@ -23,6 +24,8 @@ type CreateDaoOpt struct {
 	Logger DaoLogger
 
 	ErrSetter func(err error)
+
+	DBGetter DBGetter
 }
 
 // CreateDaoOpter defines the option pattern interface for CreateDaoOpt.
@@ -66,6 +69,11 @@ func WithSQLFile(sqlFile string) CreateDaoOpter {
 
 		opt.DotSQL = ds.Raw
 	})
+}
+
+// WithDB imports a db.
+func WithDB(db *sql.DB) CreateDaoOpter {
+	return CreateDaoOptFn(func(opt *CreateDaoOpt) { opt.DBGetter = MakeDB(db) })
 }
 
 // WithSQLStr imports SQL queries from the string.

@@ -12,8 +12,32 @@ import (
 	"github.com/bingoohuang/strcase"
 )
 
+// GetDBFn is the function type to get a sql.DBGetter.
+type GetDBFn func() *sql.DB
+
+// DBGetter is the interface to get a sql.DBGetter.
+type DBGetter interface{ GetDB() *sql.DB }
+
+// GetDB returns a sql.DBGetter.
+func (f GetDBFn) GetDB() *sql.DB { return f() }
+
+// StdDB is the wrapper for sql.DBGetter.
+type StdDB struct{ db *sql.DB }
+
+// MakeDB makes a new StdDB from sql.DBGetter.
+func MakeDB(db *sql.DB) *StdDB { return &StdDB{db: db} }
+
+// GetDB returns a sql.DBGetter.
+func (f StdDB) GetDB() *sql.DB { return f.db }
+
+// nolint gochecknoglobals
+var (
+	// DB is the global sql.DB for convenience.
+	DB *sql.DB
+)
+
 // CreateDao fulfils the dao (should be pointer)
-func CreateDao(db *sql.DB, dao interface{}, createDaoOpts ...CreateDaoOpter) error {
+func CreateDao(dao interface{}, createDaoOpts ...CreateDaoOpter) error {
 	daov := reflect.ValueOf(dao)
 	if daov.Kind() != reflect.Ptr || daov.Elem().Kind() != reflect.Struct {
 		return fmt.Errorf("dao should be pointer to struct")
@@ -24,9 +48,8 @@ func CreateDao(db *sql.DB, dao interface{}, createDaoOpts ...CreateDaoOpter) err
 		return err
 	}
 
-	driverName := LookupDriverName(db.Driver())
-	sqlFilter := createSQLFilter(driverName)
 	v := reflect.Indirect(daov)
+	createDBGetter(v, option)
 	createLogger(v, option)
 	createErrorSetter(v, option)
 
@@ -59,12 +82,11 @@ func CreateDao(db *sql.DB, dao interface{}, createDaoOpts ...CreateDaoOpter) err
 		}
 
 		p.opt = option
-		p.sqlFilter = sqlFilter
 
 		p.BindBy = parsed.BindBy
 		p.IsQuery = parsed.IsQuery
 
-		r := sqlRun{DB: db, sqlParsed: p}
+		r := sqlRun{sqlParsed: p}
 
 		if err := r.createFn(f); err != nil {
 			return err
@@ -82,17 +104,6 @@ func MapValueOrDefault(m map[string]string, key, defaultValue string) string {
 	}
 
 	return defaultValue
-}
-
-func createSQLFilter(driverName string) func(s string) string {
-	return func(s string) string {
-		switch driverName {
-		case "postgres":
-			return replaceQuestionMark4Postgres(s)
-		default:
-			return s
-		}
-	}
 }
 
 func (option *CreateDaoOpt) getSQLStmt(field StructField, tags Tags, stack int) (SQLPart, string) {
@@ -203,7 +214,6 @@ func makeOutTypes(outType reflect.Type, numOut int) []reflect.Type {
 }
 
 type sqlRun struct {
-	*sql.DB
 	*sqlParsed
 }
 
@@ -260,7 +270,7 @@ func (r *sqlRun) queryByName(numIn int, f StructField,
 		return nil, err
 	}
 
-	rows, err := r.doQueryDirectVars(runSQL, vars) // nolint rowserrcheck
+	rows, err := r.doQueryDirectVars(vars) // nolint rowserrcheck
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +309,9 @@ func (r *sqlRun) execByName(numIn int, f StructField, outTypes []reflect.Type,
 		lastSQL    string
 	)
 
-	tx, err := r.BeginTx(r.opt.Ctx, nil)
+	db := r.opt.DBGetter.GetDB()
+
+	tx, err := db.BeginTx(r.opt.Ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin tx %w", err)
 	}
@@ -325,9 +337,8 @@ func (r *sqlRun) execByName(numIn int, f StructField, outTypes []reflect.Type,
 
 			r.resetSQLParsed(parsed)
 
-			pr, err = tx.PrepareContext(r.opt.Ctx, r.Stmt)
-			if err != nil {
-				return nil, fmt.Errorf("failed to prepare sql %s error %w", r.SQL, err)
+			if pr, err = tx.PrepareContext(r.opt.Ctx, r.Stmt); err != nil {
+				return nil, fmt.Errorf("failed to prepare sql %s error %w", r.Stmt, err)
 			}
 		}
 
@@ -430,7 +441,9 @@ func (r *sqlRun) execBySeq(numIn int, f StructField,
 	vars := r.makeVars(args)
 	r.logPrepare(runSQL, vars)
 
-	result, err := r.ExecContext(r.opt.Ctx, runSQL, vars...)
+	db := r.opt.DBGetter.GetDB()
+
+	result, err := db.ExecContext(r.opt.Ctx, runSQL, vars...)
 	if err != nil {
 		return nil, fmt.Errorf("execute %s error %w", r.SQL, err)
 	}
@@ -457,7 +470,7 @@ func (r *sqlRun) queryBySeq(numIn int, f StructField,
 
 	r.resetSQLParsed(parsed)
 
-	rows, err := r.doQuery(r.Stmt, args) // nolint rowserrcheck
+	rows, err := r.doQuery(args) // nolint rowserrcheck
 	if err != nil {
 		return nil, err
 	}
@@ -556,22 +569,24 @@ func (p *sqlParsed) getRowScanInterceptorFn() RowScanInterceptorFn {
 	return nil
 }
 
-func (r *sqlRun) doQuery(runSQL string, args []reflect.Value) (*sql.Rows, error) {
+func (r *sqlRun) doQuery(args []reflect.Value) (*sql.Rows, error) {
 	vars := r.makeVars(args)
 
-	return r.doQueryDirectVars(runSQL, vars)
+	return r.doQueryDirectVars(vars)
 }
 
-func (r *sqlRun) doQueryDirectVars(runSQL string, vars []interface{}) (*sql.Rows, error) {
-	r.logPrepare(runSQL, vars)
+func (r *sqlRun) doQueryDirectVars(vars []interface{}) (*sql.Rows, error) {
+	r.logPrepare(r.Stmt, vars)
 
-	rows, err := r.QueryContext(r.opt.Ctx, runSQL, vars...)
+	db := r.opt.DBGetter.GetDB()
+
+	rows, err := db.QueryContext(r.opt.Ctx, r.Stmt, vars...)
 	if err != nil || rows.Err() != nil {
 		if err == nil {
 			err = rows.Err()
 		}
 
-		return nil, fmt.Errorf("execute %s error %w", runSQL, err)
+		return nil, fmt.Errorf("execute %s error %w", r.Stmt, err)
 	}
 
 	return rows, nil
@@ -708,6 +723,16 @@ func convertExecResult(result sql.Result, stmt string, outTypes []reflect.Type) 
 	}
 
 	return nil, fmt.Errorf("unsupported returned type %v", outTypes)
+}
+
+func convertSQLBindMarks(db *sql.DB, s string) string {
+	driverName := LookupDriverName(db.Driver())
+	switch driverName {
+	case "postgres":
+		return replaceQuestionMark4Postgres(s)
+	default:
+		return s
+	}
 }
 
 func replaceQuestionMark4Postgres(s string) string {

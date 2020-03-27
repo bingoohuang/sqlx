@@ -20,7 +20,7 @@ import (
 
 // nolint lll
 type opts struct {
-	DataSource string `short:"d" required:"true" long:"datasource" description:"datasource, eg. 127.0.0.1:9633 root/8BE4 db=test"`
+	DataSource string `short:"d" required:"true" long:"dsn" description:"dsn, eg. root:8BE4@127.0.0.1:9633/test"`
 }
 
 // Table ...
@@ -67,30 +67,28 @@ func parseArgs() *opts {
 
 func main() {
 	opt := parseArgs()
-	ds := sqlx.CompatibleMySQLDs(opt.DataSource)
-	db := sqlx.NewSQLMore("mysql", ds).Open()
+	db := sqlx.NewSQLMore("mysql", sqlx.CompatibleMySQLDs(opt.DataSource)).Open()
 
 	defer db.Close()
 
-	dao := &mysqlSchemaDao{Logger: &sqlx.DaoLogrus{}}
+	sqlx.DB = db
 
 	logrus.SetLevel(logrus.DebugLevel)
 
-	if err := sqlx.CreateDao(db, dao); err != nil {
+	dao := &mysqlSchemaDao{Logger: &sqlx.DaoLogrus{}}
+	if err := sqlx.CreateDao(dao); err != nil {
 		panic(err)
 	}
 
 	schema := dao.Schema()
 	if schema == "" {
-		fmt.Fprintf(os.Stderr, "database required set in the datasource flags")
+		fmt.Fprintf(os.Stderr, "database required set in the dsn flags")
 
 		os.Exit(1)
 	}
 
-	tables := dao.Tables(schema)
 	tablesMap := make(map[string]Table)
-
-	for _, t := range tables {
+	for _, t := range dao.Tables(schema) {
 		tablesMap[t.Name] = t
 	}
 
@@ -197,11 +195,11 @@ func (g *daoGenerator) writeDAOCreator() {
 	daoName := beanName + "DAO"
 	structName := "Create" + daoName
 	g.b.WriteString("// " + structName + " represents DAO creator for table " + g.table.Name + ".\n")
-	g.b.WriteString("func " + structName + " (db *sql.DB) (*" + daoName + ", error) {\n")
+	g.b.WriteString("func " + structName + " () (*" + daoName + ", error) {\n")
 	g.b.WriteString("\tdao := &" + daoName + "{Logger: &sqlx.DaoLogrus{}}\n")
 	g.b.WriteString("\n")
 	// nolint lll
-	g.b.WriteString("\tif err := sqlx.CreateDao(db, dao, sqlx.WithSQLStr(" + strcase.ToCamelLower(g.table.Name) + "SQL)); err != nil {\n")
+	g.b.WriteString("\tif err := sqlx.CreateDao(dao, sqlx.WithSQLStr(" + strcase.ToCamelLower(g.table.Name) + "SQL)); err != nil {\n")
 	g.b.WriteString("\t\treturn nil, err;\n")
 	g.b.WriteString("\t}\n")
 	g.b.WriteString("\n")
@@ -222,10 +220,19 @@ func (g *daoGenerator) writeDAO() {
 		g.b.WriteString("\tInsert func(" + beanName + ")int `sqlName:\"Insert" + beanName + "\"`\n")
 	}
 
-	g.b.WriteString("\tDelete func(" + beanName + ")(effectedRows int) `sqlName:\"Delete" + beanName + "\"`\n")
-	g.b.WriteString("\tUpdate func(" + beanName + ")(effectedRows int) `sqlName:\"Update" + beanName + "\"`\n")
-	g.b.WriteString("\tFind func(" + beanName + ")(" + beanName + ", error) `sqlName:\"Find" + beanName + "\"`\n")
-	g.b.WriteString("\tSelectAll func(" + beanName + ")[]" + beanName + " `sqlName:\"SelectAll" + beanName + "\"`\n")
+	if len(g.keyColumns) == 1 {
+		c := g.keyColumns[0]
+		args := strcase.ToCamelLower(c.ColumnName) + " " + columnGoType(c)
+		g.b.WriteString("\tDelete func(" + args + ")(effectedRows int) `sqlName:\"Delete" + beanName + "\"`\n")
+		g.b.WriteString("\tUpdate func(" + args + ")(effectedRows int) `sqlName:\"Update" + beanName + "\"`\n")
+		g.b.WriteString("\tFind func(" + args + ")(" + beanName + ", error) `sqlName:\"Find" + beanName + "\"`\n")
+	} else {
+		g.b.WriteString("\tDelete func(" + beanName + ")(effectedRows int) `sqlName:\"Delete" + beanName + "\"`\n")
+		g.b.WriteString("\tUpdate func(" + beanName + ")(effectedRows int) `sqlName:\"Update" + beanName + "\"`\n")
+		g.b.WriteString("\tFind func(" + beanName + ")(" + beanName + ", error) `sqlName:\"Find" + beanName + "\"`\n")
+	}
+
+	g.b.WriteString("\tSelectAll func()[]" + beanName + " `sqlName:\"SelectAll" + beanName + "\"`\n")
 
 	g.b.WriteString("\tLogger sqlx.DaoLogger\n")
 	g.b.WriteString("\tErr error\n")
@@ -251,22 +258,16 @@ func (g *daoGenerator) writeStruct() {
 }
 
 func (g *daoGenerator) writeImports() {
-	if len(g.imports) == 0 {
-		return
-	}
+	g.b.WriteString("import (\n")
+	g.b.WriteString("\t \"database/sql\"\n")
+	g.b.WriteString("\t \"github.com/bingoohuang/sqlx\"\n")
 
 	importPkgs := make([]string, 0, len(g.imports))
-
 	for k := range g.imports {
 		importPkgs = append(importPkgs, k)
 	}
 
 	sort.Strings(importPkgs)
-
-	g.b.WriteString("import (\n")
-
-	g.b.WriteString("\t \"database/sql\"\n")
-	g.b.WriteString("\t \"github.com/bingoohuang/sqlx\"\n")
 
 	for _, p := range importPkgs {
 		g.b.WriteString("\t \"" + p + "\"\n")
@@ -320,9 +321,7 @@ func (g *daoGenerator) writeSQL() {
 func (g *daoGenerator) writeSQLUpdate() {
 	g.b.WriteString("\n-- name: Update" + strcase.ToCamel(g.table.Name) + "\nupdate " + g.table.Name + "\nset\n")
 
-	i := 0
-
-	for _, c := range g.noneKeyColumns {
+	for i, c := range g.noneKeyColumns {
 		if i > 0 {
 			g.b.WriteString(",")
 		} else {
@@ -330,7 +329,6 @@ func (g *daoGenerator) writeSQLUpdate() {
 		}
 
 		g.b.WriteString("    " + c.ColumnName + " = :" + c.ColumnName + "\n")
-		i++
 	}
 
 	g.b.WriteString("where\n")
@@ -349,9 +347,12 @@ func (g *daoGenerator) writeSQLDelete() {
 }
 
 func (g *daoGenerator) genWhereColumns() {
-	i := 0
+	if len(g.keyColumns) == 1 {
+		g.b.WriteString(g.keyColumns[0].ColumnName + "= ':1'")
+		return
+	}
 
-	for _, c := range g.whereColumns() {
+	for i, c := range g.whereColumns() {
 		if i > 0 {
 			g.b.WriteString(",")
 		} else {
@@ -359,7 +360,6 @@ func (g *daoGenerator) genWhereColumns() {
 		}
 
 		g.b.WriteString("    " + c.ColumnName + " = :" + c.ColumnName + "\n")
-		i++
 	}
 }
 
@@ -373,8 +373,7 @@ func (g *daoGenerator) whereColumns() []Column {
 func (g *daoGenerator) writeSQLInsert() {
 	g.b.WriteString("\n-- name: Insert" + strcase.ToCamel(g.table.Name) + "\ninsert into " + g.table.Name + "\n")
 
-	i := 0
-	for _, c := range g.columns {
+	for i, c := range g.columns {
 		if i == 0 {
 			g.b.WriteString("(")
 		} else {
@@ -382,15 +381,12 @@ func (g *daoGenerator) writeSQLInsert() {
 		}
 
 		g.b.WriteString(c.ColumnName)
-		i++
 	}
 
 	g.b.WriteString(")\n")
 	g.b.WriteString("values\n")
 
-	i = 0
-
-	for _, c := range g.columns {
+	for i, c := range g.columns {
 		if i == 0 {
 			g.b.WriteString("(")
 		} else {
@@ -398,7 +394,6 @@ func (g *daoGenerator) writeSQLInsert() {
 		}
 
 		g.b.WriteString(":" + c.ColumnName)
-		i++
 	}
 
 	g.b.WriteString(");\n")
@@ -407,14 +402,12 @@ func (g *daoGenerator) writeSQLInsert() {
 func (g *daoGenerator) writeSQLSelectAll() {
 	g.b.WriteString("\n-- name: SelectAll" + strcase.ToCamel(g.table.Name) + "\nselect ")
 
-	i := 0
-	for _, c := range g.columns {
+	for i, c := range g.columns {
 		if i > 0 {
 			g.b.WriteString(", ")
 		}
 
 		g.b.WriteString(c.ColumnName)
-		i++
 	}
 
 	g.b.WriteString("\nfrom " + g.table.Name)
@@ -428,14 +421,12 @@ func (g *daoGenerator) writeSQLFind() {
 
 	g.b.WriteString("\n-- name: Find" + strcase.ToCamel(g.table.Name) + "\nselect ")
 
-	i := 0
-	for _, c := range g.columns {
+	for i, c := range g.columns {
 		if i > 0 {
 			g.b.WriteString(", ")
 		}
 
 		g.b.WriteString(c.ColumnName)
-		i++
 	}
 
 	g.b.WriteString("\nfrom " + g.table.Name + "\nwhere \n")

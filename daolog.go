@@ -1,6 +1,7 @@
 package sqlx
 
 import (
+	"database/sql"
 	"reflect"
 
 	"github.com/sirupsen/logrus"
@@ -16,8 +17,10 @@ type DaoLogger interface {
 	LogStart(id, sql string, vars interface{})
 }
 
+// nolint gochecknoglobals
 var (
-	_daoLoggerType = reflect.TypeOf((*DaoLogger)(nil)).Elem() // nolint gochecknoglobals
+	_daoLoggerType = reflect.TypeOf((*DaoLogger)(nil)).Elem()
+	_dbGetterType  = reflect.TypeOf((*DBGetter)(nil)).Elem()
 )
 
 // DaoLoggerNoop implements the interface for dao logging with NOOP.
@@ -42,24 +45,45 @@ func (d *DaoLogrus) LogStart(id, sql string, vars interface{}) {
 	logrus.Debugf("start to exec %s [%s] with %v", id, sql, vars)
 }
 
+func createDBGetter(v reflect.Value, option *CreateDaoOpt) {
+	if option.DBGetter != nil {
+		return
+	}
+
+	if fv := findTypedField(v, _dbGetterType); fv.IsValid() {
+		option.DBGetter = fv.Interface().(DBGetter)
+		return
+	}
+
+	option.DBGetter = GetDBFn(func() *sql.DB { return DB })
+}
+
 func createLogger(v reflect.Value, option *CreateDaoOpt) {
 	if option.Logger != nil {
 		return
 	}
 
+	if fv := findTypedField(v, _daoLoggerType); fv.IsValid() {
+		option.Logger = fv.Interface().(DaoLogger)
+		return
+	}
+
+	option.Logger = &DaoLoggerNoop{}
+}
+
+func findTypedField(v reflect.Value, t reflect.Type) reflect.Value {
 	for i := 0; i < v.NumField(); i++ {
-		fv := v.Field(i)
 		f := v.Type().Field(i)
 
 		if f.PkgPath != "" /* not exportable? */ {
 			continue
 		}
 
-		if goreflect.ImplType(f.Type, _daoLoggerType) && !fv.IsNil() {
-			option.Logger = fv.Interface().(DaoLogger)
-			return
+		fv := v.Field(i)
+		if goreflect.ImplType(f.Type, t) && !fv.IsNil() {
+			return fv
 		}
 	}
 
-	option.Logger = &DaoLoggerNoop{}
+	return reflect.Value{}
 }

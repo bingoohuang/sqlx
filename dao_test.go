@@ -4,6 +4,8 @@ package sqlx_test
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"strconv"
 	"testing"
 	"time"
 
@@ -457,4 +459,67 @@ func TestLastInsertID(t *testing.T) {
 	effectedRows, insertID := dao.Update2(map[string]interface{}{"id": lastInsertID, "age": 602, "addr": "yy"})
 	that.Equal(1, effectedRows)
 	that.Equal(lastInsertID, insertID)
+}
+
+type MyTime time.Time
+
+// Marshaler is the interface implemented by types that
+// can marshal themselves into valid JSON.
+func (m MyTime) MarshalJSON() ([]byte, error) {
+	s := (time.Time(m)).Format("2006-01-02 15:04:05")
+	return []byte(strconv.Quote(s)), nil
+}
+
+// Value - Implementation of valuer for database/sql
+func (m MyTime) Value() (driver.Value, error) {
+	return driver.Value(time.Time(m)), nil
+}
+
+const dotSQLTime = `
+-- name: CreateTable
+create table person(id INTEGER PRIMARY KEY AUTOINCREMENT, age int, addr varchar(10), birthday timestamp);
+
+-- name: Add
+insert into person( age, addr, birthday ) values( :age, :addr, :birthday);
+
+-- name: Find
+select id, age, addr, birthday from person where id = :1;
+;
+`
+
+type personTime struct {
+	ID       uint64
+	Age      int
+	Addr     string
+	Birthday MyTime
+}
+type personTimeDao struct {
+	CreateTable func()
+	Add         func(m personTime) (lastInsertID uint64)
+	Find        func(uint64) personTime
+
+	Logger sqlx.DaoLogger
+	Error  error
+}
+
+func TestTime(t *testing.T) {
+	that := assert.New(t)
+
+	logrus.SetLevel(logrus.DebugLevel)
+	// 生成DAO，自动创建dao结构体中的函数字段
+	dao := &personTimeDao{Logger: &sqlx.DaoLogrus{}}
+	that.Nil(sqlx.CreateDao(dao, sqlx.WithDB(openDB(t)), sqlx.WithSQLStr(dotSQLTime)))
+
+	now, _ := time.Parse("2006-01-02 15:04:05", "2020-03-31 17:17:40")
+	dao.CreateTable()
+	p := personTime{
+		Age:      10,
+		Addr:     "aa",
+		Birthday: MyTime(now),
+	}
+	lastInsertID := dao.Add(p)
+	p.ID = lastInsertID
+
+	p2 := dao.Find(lastInsertID)
+	that.Equal(p, p2)
 }

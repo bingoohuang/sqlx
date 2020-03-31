@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/bingoohuang/gou/str"
+
 	"github.com/bingoohuang/sqlx"
 	"github.com/bingoohuang/strcase"
 	flags "github.com/jessevdk/go-flags"
@@ -21,6 +23,7 @@ import (
 // nolint lll
 type opts struct {
 	DataSource string `short:"d" required:"true" long:"dsn" description:"dsn, eg. root:8BE4@127.0.0.1:9633/test"`
+	Pkg        string `short:"p" required:"false" long:"pkg" description:"package name, default lowercase of database name"`
 }
 
 // Table ...
@@ -93,7 +96,8 @@ func main() {
 	}
 
 	columns := dao.Columns(schema)
-	pkg := strings.ToLower(schema)
+
+	pkg := str.EmptyThen(opt.Pkg, strings.ToLower(schema))
 	_ = os.MkdirAll(pkg, 0750)
 
 	gen(columns, tablesMap, pkg)
@@ -193,7 +197,7 @@ func (g *daoGenerator) gen(w io.Writer) {
 func (g *daoGenerator) writeDAOCreator() {
 	beanName := strcase.ToCamel(g.table.Name)
 	daoName := beanName + "DAO"
-	structName := "Create" + daoName
+	structName := "Create" + daoName + "E"
 	g.b.WriteString("// " + structName + " represents DAO creator for table " + g.table.Name + ".\n")
 	g.b.WriteString("func " + structName + " () (*" + daoName + ", error) {\n")
 	g.b.WriteString("\tdao := &" + daoName + "{Logger: &sqlx.DaoLogrus{}}\n")
@@ -204,6 +208,17 @@ func (g *daoGenerator) writeDAOCreator() {
 	g.b.WriteString("\t}\n")
 	g.b.WriteString("\n")
 	g.b.WriteString("\treturn dao, nil\n")
+	g.b.WriteString("}\n\n")
+
+	structName = "Create" + daoName
+	g.b.WriteString("// " + structName + " represents DAO creator for table " + g.table.Name + ".\n")
+	g.b.WriteString("func " + structName + " () *" + daoName + " {\n")
+	g.b.WriteString("\tdao, err := " + structName + "E()\n")
+	g.b.WriteString("\tif err != nil {\n")
+	g.b.WriteString("\t\tpanic(err)\n")
+	g.b.WriteString("\t}\n")
+	g.b.WriteString("\n")
+	g.b.WriteString("\treturn dao\n")
 	g.b.WriteString("}\n\n")
 }
 
@@ -234,6 +249,7 @@ func (g *daoGenerator) writeDAO() {
 
 	g.b.WriteString("\tSelectAll func()[]" + beanName + " `sqlName:\"SelectAll" + beanName + "\"`\n")
 
+	g.b.WriteString("\n")
 	g.b.WriteString("\tLogger sqlx.DaoLogger\n")
 	g.b.WriteString("\tErr error\n")
 	g.b.WriteString("}\n\n")
@@ -259,7 +275,6 @@ func (g *daoGenerator) writeStruct() {
 
 func (g *daoGenerator) writeImports() {
 	g.b.WriteString("import (\n")
-	g.b.WriteString("\t \"database/sql\"\n")
 	g.b.WriteString("\t \"github.com/bingoohuang/sqlx\"\n")
 
 	importPkgs := make([]string, 0, len(g.imports))
@@ -333,7 +348,7 @@ func (g *daoGenerator) writeSQLUpdate() {
 
 	g.b.WriteString("where\n")
 
-	g.genWhereColumns()
+	g.genWhereColumns(false)
 
 	g.b.WriteString(";\n")
 }
@@ -341,13 +356,13 @@ func (g *daoGenerator) writeSQLUpdate() {
 func (g *daoGenerator) writeSQLDelete() {
 	g.b.WriteString("\n-- name: Delete" + strcase.ToCamel(g.table.Name) + "\ndelete from " + g.table.Name + "\nwhere\n")
 
-	g.genWhereColumns()
+	g.genWhereColumns(true)
 
 	g.b.WriteString(";\n")
 }
 
-func (g *daoGenerator) genWhereColumns() {
-	if len(g.keyColumns) == 1 {
+func (g *daoGenerator) genWhereColumns(pos bool) {
+	if len(g.keyColumns) == 1 && pos {
 		g.b.WriteString(g.keyColumns[0].ColumnName + "= ':1'")
 		return
 	}
@@ -430,7 +445,7 @@ func (g *daoGenerator) writeSQLFind() {
 	}
 
 	g.b.WriteString("\nfrom " + g.table.Name + "\nwhere \n")
-	g.genWhereColumns()
+	g.genWhereColumns(true)
 	g.b.WriteString(";\n")
 }
 

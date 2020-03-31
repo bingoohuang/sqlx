@@ -3,6 +3,7 @@ package sqlx
 import (
 	"database/sql"
 	"reflect"
+	"time"
 )
 
 // NullAny represents any that may be null.
@@ -43,8 +44,8 @@ func (n *NullAny) Scan(value interface{}) error {
 		}
 
 		n.Val = reflect.ValueOf(sn.String).Convert(n.Type)
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32:
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		sn := &sql.NullInt32{}
 		if err := sn.Scan(value); err != nil {
 			return err
@@ -61,16 +62,30 @@ func (n *NullAny) Scan(value interface{}) error {
 	case reflect.Interface:
 		n.Val = reflect.ValueOf(value).Convert(n.Type)
 	default:
-		sn := &sql.NullString{}
-		if err := sn.Scan(value); err != nil {
-			return err
-		}
+		if n.Type == timeType || timeType.ConvertibleTo(n.Type) {
+			sn := &sql.NullTime{}
+			if err := sn.Scan(value); err != nil {
+				return err
+			}
 
-		n.Val = reflect.ValueOf(sn.String).Convert(n.Type)
+			n.Val = reflect.ValueOf(sn.Time).Convert(n.Type)
+		} else {
+			sn := &sql.NullString{}
+			if err := sn.Scan(value); err != nil {
+				return err
+			}
+
+			n.Val = reflect.ValueOf(sn.String).Convert(n.Type)
+		}
 	}
 
 	return nil
 }
+
+// nolint gochecknoglobals
+var (
+	timeType = reflect.TypeOf((*time.Time)(nil)).Elem()
+)
 
 func (n *NullAny) getVal() reflect.Value {
 	if n.Type == nil {

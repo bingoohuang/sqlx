@@ -415,7 +415,7 @@ func (p *sqlParsed) createNamedVars(bean reflect.Value) ([]interface{}, error) {
 	}
 
 	if namedValueParser == nil {
-		return nil, fmt.Errorf("unsupported type %v", itemType)
+		return nil, fmt.Errorf("named vars should use struct/map, unsupported type %v", itemType)
 	}
 
 	vars := make([]interface{}, len(p.Vars))

@@ -58,6 +58,11 @@ func compatibleDBURL(s string) (string, bool) {
 		right = right[:slashPos]
 	}
 
+	askPos := strings.Index(db, "?")
+	if askPos > 0 {
+		db = db[:askPos]
+	}
+
 	host, port := parseHostPort(right, "3306")
 
 	return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=true&loc=Local",

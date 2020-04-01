@@ -6,7 +6,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/bingoohuang/goreflect"
+	"github.com/bingoohuang/gor"
 )
 
 // DaoLogger is the interface for dao logging.
@@ -80,7 +80,7 @@ func findTypedField(v reflect.Value, t reflect.Type) reflect.Value {
 		}
 
 		fv := v.Field(i)
-		if goreflect.ImplType(f.Type, t) && !fv.IsNil() {
+		if gor.ImplType(f.Type, t) && !fv.IsNil() {
 			return fv
 		}
 	}

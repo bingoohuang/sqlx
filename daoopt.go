@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/bingoohuang/goreflect"
+	"github.com/bingoohuang/gor"
 
-	"github.com/bingoohuang/goreflect/defaults"
+	"github.com/bingoohuang/gor/defaults"
 )
 
 // CreateDaoOpt defines the options for CreateDao
@@ -136,7 +136,7 @@ func createErrorSetter(v reflect.Value, option *CreateDaoOpt) {
 			continue
 		}
 
-		if !goreflect.IsError(f.Type) {
+		if !gor.IsError(f.Type) {
 			continue
 		}
 

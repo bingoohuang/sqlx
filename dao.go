@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/bingoohuang/goreflect"
+	"github.com/bingoohuang/gor"
 
 	"github.com/bingoohuang/strcase"
 )
@@ -148,7 +148,7 @@ func (r *sqlRun) createFn(f StructField) error {
 	numIn := f.Type.NumIn()
 	numOut := f.Type.NumOut()
 
-	lastOutError := numOut > 0 && goreflect.IsError(f.Type.Out(numOut-1)) // nolint gomnd
+	lastOutError := numOut > 0 && gor.IsError(f.Type.Out(numOut-1)) // nolint gomnd
 	if lastOutError {
 		numOut--
 	}

@@ -443,12 +443,12 @@ func (r *sqlRun) execBySeq(numIn int, f StructField,
 
 	db := r.opt.DBGetter.GetDB()
 
-	result, err := db.ExecContext(r.opt.Ctx, runSQL, vars...)
+	result, err := db.ExecContext(r.opt.Ctx, r.Stmt, vars...)
 	if err != nil {
 		return nil, fmt.Errorf("execute %s error %w", r.SQL, err)
 	}
 
-	results, err := convertExecResult(result, runSQL, outTypes)
+	results, err := convertExecResult(result, r.Stmt, outTypes)
 	if err != nil {
 		return nil, fmt.Errorf("execute %s error %w", r.SQL, err)
 	}

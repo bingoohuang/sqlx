@@ -237,12 +237,12 @@ type person6 struct {
 
 // personDao4 定义对person表操作的所有方法
 type personDao4 struct {
-	CreateTable func()                       `sql:"create table person(id varchar(100), age int, addr varchar(10) default 'bj')"`
-	AddID       func(int)                    `sql:"insert into person(age, addr) values(:1, 'zags')"`
-	Add         func(map[string]interface{}) `sql:"insert into person(id, age, addr) values(:id, :age, :addr)"`
-	FindByAge1  func(int) person4            `sql:"select id, age, addr from person where age = :1"`
-	FindByAge2  func(int) person5            `sqlName:"FindByAge1"`
-	FindByAge3  func(int) person6            `sqlName:"FindByAge1"`
+	CreateTable func()            `sql:"create table person(id varchar(100), age int, addr varchar(10) default 'bj')"`
+	AddID       func(int)         `sql:"insert into person(age, addr) values(:1, 'zags')"`
+	Add         func(M)           `sql:"insert into person(id, age, addr) values(:id, :age, :addr)"`
+	FindByAge1  func(int) person4 `sql:"select id, age, addr from person where age = :1"`
+	FindByAge2  func(int) person5 `sqlName:"FindByAge1"`
+	FindByAge3  func(int) person6 `sqlName:"FindByAge1"`
 }
 
 func TestNullString(t *testing.T) {
@@ -292,10 +292,10 @@ select id, addr from person where id=:1
 // personDaoMap 定义对person表操作的所有方法
 type personDaoMap struct {
 	CreateTable func()
-	Add         func(m map[string]interface{})
+	Add         func(m M)
 	Find        func(id string) personMap
-	FindAsMap1  func(id string) map[string]string      `sqlName:"Find"`
-	FindAsMap2  func(id string) map[string]interface{} `sqlName:"Find"`
+	FindAsMap1  func(id string) map[string]string `sqlName:"Find"`
+	FindAsMap2  func(id string) M                 `sqlName:"Find"`
 
 	Count    func() (count int)
 	GetAddr  func(id string) (addr string) `sql:"select addr from person where id=:1"`
@@ -308,6 +308,8 @@ type personDaoMap struct {
 	Error  error
 }
 
+type M map[string]interface{}
+
 func TestMapArg(t *testing.T) {
 	that := assert.New(t)
 
@@ -318,14 +320,14 @@ func TestMapArg(t *testing.T) {
 	that.Nil(sqlx.CreateDao(dao, sqlx.WithSQLStr(dotSQLMap)))
 
 	dao.CreateTable()
-	dao.Add(map[string]interface{}{"id": "40685", "age": 500, "addr": "bjca"})
-	dao.Add(map[string]interface{}{"id": "40686", "age": 600, "addr": nil})
+	dao.Add(M{"id": "40685", "age": 500, "addr": "bjca"})
+	dao.Add(M{"id": "40686", "age": 600, "addr": nil})
 
 	that.Equal(personMap{ID: "40685", Age: 500, Addr: "bjca"}, dao.Find("40685"))
 	that.Equal(personMap{ID: "40686", Age: 600, Addr: ""}, dao.Find("40686"))
 
 	that.Equal(map[string]string{"id": "40685", "age": "500", "addr": "bjca"}, dao.FindAsMap1("40685"))
-	that.Equal(map[string]interface{}{"id": "40685", "age": int64(500), "addr": "bjca"}, dao.FindAsMap2("40685"))
+	that.Equal(M{"id": "40685", "age": int64(500), "addr": "bjca"}, dao.FindAsMap2("40685"))
 
 	that.Equal(2, dao.Count())
 	that.Equal("bjca", dao.GetAddr("40685"))
@@ -385,7 +387,7 @@ and age = :age
 // personDaoDynamic 定义对person表操作的所有方法
 type personDaoDynamic struct {
 	CreateTable func()
-	Add         func(m map[string]interface{})
+	Add         func(m M)
 	GetAddr     func(id string, age int) (addr string)
 	GetAddr2    func(id string, age int) (addr string)
 
@@ -406,8 +408,8 @@ func TestMapDynamic(t *testing.T) {
 	that.Nil(sqlx.CreateDao(dao, sqlx.WithSQLStr(dotSQLDynamic)))
 
 	dao.CreateTable()
-	dao.Add(map[string]interface{}{"id": "40685", "age": 500, "addr": "bjca"})
-	dao.Add(map[string]interface{}{"id": "40685", "age": 600, "addr": "acjb"})
+	dao.Add(M{"id": "40685", "age": 500, "addr": "bjca"})
+	dao.Add(M{"id": "40685", "age": 600, "addr": "acjb"})
 
 	that.Equal("bjca", dao.GetAddr("40685", 0))
 	that.Equal("acjb", dao.GetAddr("40685", 600))
@@ -436,9 +438,9 @@ update person set age = :age, addr = :addr where id = :id;
 
 type personLastInsertID struct {
 	CreateTable func()
-	Add         func(m map[string]interface{}) (lastInsertID int)
-	Update      func(m map[string]interface{}) (effectedRows int)
-	Update2     func(m map[string]interface{}) (effectedRows, lastInsertID int) `sqlName:"Update"`
+	Add         func(m M) (lastInsertID int)
+	Update      func(m M) (effectedRows int)
+	Update2     func(m M) (effectedRows, lastInsertID int) `sqlName:"Update"`
 	Logger      sqlx.DaoLogger
 	Error       error
 }
@@ -452,11 +454,11 @@ func TestLastInsertID(t *testing.T) {
 	that.Nil(sqlx.CreateDao(dao, sqlx.WithDB(openDB(t)), sqlx.WithSQLStr(dotSQLLastInsertID)))
 
 	dao.CreateTable()
-	that.True(dao.Add(map[string]interface{}{"age": 500, "addr": "bjca"}) > 0)
-	lastInsertID := dao.Add(map[string]interface{}{"age": 600, "addr": "acjb"})
+	that.True(dao.Add(M{"age": 500, "addr": "bjca"}) > 0)
+	lastInsertID := dao.Add(M{"age": 600, "addr": "acjb"})
 	that.True(lastInsertID > 0)
-	that.Equal(1, dao.Update(map[string]interface{}{"id": lastInsertID, "age": 601, "addr": "xx"}))
-	effectedRows, insertID := dao.Update2(map[string]interface{}{"id": lastInsertID, "age": 602, "addr": "yy"})
+	that.Equal(1, dao.Update(M{"id": lastInsertID, "age": 601, "addr": "xx"}))
+	effectedRows, insertID := dao.Update2(M{"id": lastInsertID, "age": 602, "addr": "yy"})
 	that.Equal(1, effectedRows)
 	that.Equal(lastInsertID, insertID)
 }
@@ -484,7 +486,9 @@ insert into person( age, addr, birthday ) values( :age, :addr, :birthday);
 
 -- name: Find
 select id, age, addr, birthday from person where id = :1;
-;
+
+-- name: Delete
+delete from person  where id = ':';;
 `
 
 type personTime struct {
@@ -497,6 +501,7 @@ type personTimeDao struct {
 	CreateTable func()
 	Add         func(m personTime) (lastInsertID uint64)
 	Find        func(uint64) personTime
+	Delete      func(uint64) (effectedRows int)
 
 	Logger sqlx.DaoLogger
 	Error  error
@@ -522,4 +527,7 @@ func TestTime(t *testing.T) {
 
 	p2 := dao.Find(lastInsertID)
 	that.Equal(p, p2)
+
+	effectedRows := dao.Delete(lastInsertID)
+	that.Equal(1, effectedRows)
 }

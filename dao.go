@@ -175,7 +175,11 @@ func (r *sqlRun) createFn(f StructField) error {
 		}
 
 		if lastOutError {
-			values = append(values, reflect.ValueOf(err))
+			if err != nil {
+				values = append(values, reflect.ValueOf(err))
+			} else {
+				values = append(values, reflect.Zero(gor.ErrType))
+			}
 		}
 
 		return values

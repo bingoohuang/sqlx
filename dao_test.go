@@ -500,7 +500,7 @@ type personTime struct {
 type personTimeDao struct {
 	CreateTable func()
 	Add         func(m personTime) (lastInsertID uint64)
-	Find        func(uint64) personTime
+	Find        func(uint64) (personTime, error)
 	Delete      func(uint64) (effectedRows int)
 
 	Logger sqlx.DaoLogger
@@ -525,8 +525,9 @@ func TestTime(t *testing.T) {
 	lastInsertID := dao.Add(p)
 	p.ID = lastInsertID
 
-	p2 := dao.Find(lastInsertID)
+	p2, err := dao.Find(lastInsertID)
 	that.Equal(p, p2)
+	that.Nil(err)
 
 	effectedRows := dao.Delete(lastInsertID)
 	that.Equal(1, effectedRows)

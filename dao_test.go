@@ -61,7 +61,7 @@ func TestDao(t *testing.T) {
 	// 多值插入
 	dao.AddAll(person{"300", 300}, person{"400", 400})
 	// 列表
-	that.Equal([]person{{"200", 200}, {"300", 300}, person{"400", 400}}, dao.ListAll())
+	that.Equal([]person{{"200", 200}, {"300", 300}, {"400", 400}}, dao.ListAll())
 	// 条件列表
 	that.Equal([]person{{"200", 200}}, dao.ListByID("200"))
 	// 匿名结构
@@ -194,7 +194,7 @@ func TestDaoWithDotSQLString(t *testing.T) {
 	dao.AddAll(person{"300", 300}, person{"400", 400})
 
 	// 列表
-	that.Equal([]person{{"300", 300}, person{"400", 400}}, dao.ListAll())
+	that.Equal([]person{{"300", 300}, {"400", 400}}, dao.ListAll())
 }
 
 func TestDaoWithDotSQLFile(t *testing.T) {
@@ -211,7 +211,7 @@ func TestDaoWithDotSQLFile(t *testing.T) {
 	dao.AddAll(person{"300", 300}, person{"400", 400})
 
 	// 列表
-	that.Equal([]person{{"300", 300}, person{"400", 400}}, dao.ListAll())
+	that.Equal([]person{{"300", 300}, {"400", 400}}, dao.ListAll())
 }
 
 // person 结构体，对应到person表字段

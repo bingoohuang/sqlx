@@ -1,3 +1,4 @@
+// nolint errcheck
 package main
 
 import (
@@ -9,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/bingoohuang/gou/str"
 
@@ -97,10 +99,30 @@ func main() {
 
 	columns := dao.Columns(schema)
 
-	pkg := str.EmptyThen(opt.Pkg, strings.ToLower(schema))
+	pkg := FixPkgName(str.EmptyThen(opt.Pkg, strings.ToLower(schema)))
+
 	_ = os.MkdirAll(pkg, 0750)
 
 	gen(columns, tablesMap, pkg)
+}
+
+// FixPkgName fixes the package name to all lower case with letters and digits kept.
+func FixPkgName(pkgName string) string {
+	name := ""
+	started := false
+	for _, c := range pkgName {
+		if !started {
+			started = unicode.IsLetter(c)
+		}
+
+		if started {
+			if unicode.IsLetter(c) || unicode.IsDigit(c) {
+				name += string(unicode.ToLower(c))
+			}
+		}
+	}
+
+	return name
 }
 
 func gen(columns []Column, tablesMap map[string]Table, pkg string) {
@@ -198,84 +220,87 @@ func (g *daoGenerator) writeDAOCreator() {
 	beanName := strcase.ToCamel(g.table.Name)
 	daoName := beanName + "DAO"
 	structName := "Create" + daoName + "E"
-	g.b.WriteString("// " + structName + " represents DAO creator for table " + g.table.Name + ".\n")
-	g.b.WriteString("func " + structName + " () (*" + daoName + ", error) {\n")
-	g.b.WriteString("\tdao := &" + daoName + "{Logger: &sqlx.DaoLogrus{}}\n")
-	g.b.WriteString("\n")
+	w := g.b.WriteString
+	w("// " + structName + " represents DAO creator for table " + g.table.Name + ".\n")
+	w("func " + structName + " () (*" + daoName + ", error) {\n")
+	w("\tdao := &" + daoName + "{Logger: &sqlx.DaoLogrus{}}\n")
+	w("\n")
 	// nolint lll
-	g.b.WriteString("\tif err := sqlx.CreateDao(dao, sqlx.WithSQLStr(" + strcase.ToCamelLower(g.table.Name) + "SQL)); err != nil {\n")
-	g.b.WriteString("\t\treturn nil, err;\n")
-	g.b.WriteString("\t}\n")
-	g.b.WriteString("\n")
-	g.b.WriteString("\treturn dao, nil\n")
-	g.b.WriteString("}\n\n")
+	w("\tif err := sqlx.CreateDao(dao, sqlx.WithSQLStr(" + strcase.ToCamelLower(g.table.Name) + "SQL)); err != nil {\n")
+	w("\t\treturn nil, err;\n")
+	w("\t}\n")
+	w("\n")
+	w("\treturn dao, nil\n")
+	w("}\n\n")
 
 	structName = "Create" + daoName
-	g.b.WriteString("// " + structName + " represents DAO creator for table " + g.table.Name + ".\n")
-	g.b.WriteString("func " + structName + " () *" + daoName + " {\n")
-	g.b.WriteString("\tdao, err := " + structName + "E()\n")
-	g.b.WriteString("\tif err != nil {\n")
-	g.b.WriteString("\t\tpanic(err)\n")
-	g.b.WriteString("\t}\n")
-	g.b.WriteString("\n")
-	g.b.WriteString("\treturn dao\n")
-	g.b.WriteString("}\n\n")
+	w("// " + structName + " represents DAO creator for table " + g.table.Name + ".\n")
+	w("func " + structName + " () *" + daoName + " {\n")
+	w("\tdao, err := " + structName + "E()\n")
+	w("\tif err != nil {\n")
+	w("\t\tpanic(err)\n")
+	w("\t}\n")
+	w("\n")
+	w("\treturn dao\n")
+	w("}\n\n")
 }
 
 func (g *daoGenerator) writeDAO() {
 	beanName := strcase.ToCamel(g.table.Name)
 	structName := beanName + "DAO"
-	g.b.WriteString("// " + structName + " represents DAO operations for table " + g.table.Name + ".\n")
-
-	g.b.WriteString("type " + structName + " struct {\n")
+	w := g.b.WriteString
+	w("// " + structName + " represents DAO operations for table " + g.table.Name + ".\n")
+	w("type " + structName + " struct {\n")
 
 	if g.autoIncrement {
-		g.b.WriteString("\tInsert func(" + beanName + ") (lastInsertID int64) `sqlName:\"Insert" + beanName + "\"`\n")
+		w("\tInsert func(" + beanName + ") (lastInsertID int64) `sqlName:\"Insert" + beanName + "\"`\n")
 	} else {
-		g.b.WriteString("\tInsert func(" + beanName + ")int `sqlName:\"Insert" + beanName + "\"`\n")
+		w("\tInsert func(" + beanName + ")int `sqlName:\"Insert" + beanName + "\"`\n")
 	}
 
 	if len(g.keyColumns) == 1 {
 		c := g.keyColumns[0]
 		args := strcase.ToCamelLower(c.ColumnName) + " " + columnGoType(c)
-		g.b.WriteString("\tDelete func(" + args + ")(effectedRows int) `sqlName:\"Delete" + beanName + "\"`\n")
-		g.b.WriteString("\tUpdate func(" + args + ")(effectedRows int) `sqlName:\"Update" + beanName + "\"`\n")
-		g.b.WriteString("\tFind func(" + args + ")(" + beanName + ", error) `sqlName:\"Find" + beanName + "\"`\n")
+		w("\tDelete func(" + args + ")(effectedRows int) `sqlName:\"Delete" + beanName + "\"`\n")
+		w("\tUpdate func(" + beanName + ")(effectedRows int) `sqlName:\"Update" + beanName + "\"`\n")
+		w("\tFind func(" + args + ")(" + beanName + ", error) `sqlName:\"Find" + beanName + "\"`\n")
 	} else {
-		g.b.WriteString("\tDelete func(" + beanName + ")(effectedRows int) `sqlName:\"Delete" + beanName + "\"`\n")
-		g.b.WriteString("\tUpdate func(" + beanName + ")(effectedRows int) `sqlName:\"Update" + beanName + "\"`\n")
-		g.b.WriteString("\tFind func(" + beanName + ")(" + beanName + ", error) `sqlName:\"Find" + beanName + "\"`\n")
+		w("\tDelete func(" + beanName + ")(effectedRows int) `sqlName:\"Delete" + beanName + "\"`\n")
+		w("\tUpdate func(" + beanName + ")(effectedRows int) `sqlName:\"Update" + beanName + "\"`\n")
+		w("\tFind func(" + beanName + ")(" + beanName + ", error) `sqlName:\"Find" + beanName + "\"`\n")
 	}
 
-	g.b.WriteString("\tSelectAll func()[]" + beanName + " `sqlName:\"SelectAll" + beanName + "\"`\n")
+	w("\tSelectAll func()[]" + beanName + " `sqlName:\"SelectAll" + beanName + "\"`\n")
 
-	g.b.WriteString("\n")
-	g.b.WriteString("\tLogger sqlx.DaoLogger\n")
-	g.b.WriteString("\tErr error\n")
-	g.b.WriteString("}\n\n")
+	w("\n")
+	w("\tLogger sqlx.DaoLogger\n")
+	w("\tErr error\n")
+	w("}\n\n")
 }
 
 func (g *daoGenerator) writeStruct() {
 	structName := strcase.ToCamel(g.table.Name)
-	g.b.WriteString("// " + structName + " represents a structure mapping for row of table " + g.table.Name + ".\n")
+	w := g.b.WriteString
+	w("// " + structName + " represents a structure mapping for row of table " + g.table.Name + ".\n")
 
 	if tc := line(g.table.Comment); tc != "" {
-		g.b.WriteString("// " + tc + "\n")
+		w("// " + tc + "\n")
 	}
 
-	g.b.WriteString("type " + structName + " struct {\n")
+	w("type " + structName + " struct {\n")
 
 	for _, c := range g.structColumns {
-		g.b.WriteString(c)
-		g.b.WriteString("\n")
+		w(c)
+		w("\n")
 	}
 
-	g.b.WriteString("}\n\n")
+	w("}\n\n")
 }
 
 func (g *daoGenerator) writeImports() {
-	g.b.WriteString("import (\n")
-	g.b.WriteString("\t \"github.com/bingoohuang/sqlx\"\n")
+	w := g.b.WriteString
+	w("import (\n")
+	w("\t \"github.com/bingoohuang/sqlx\"\n")
 
 	importPkgs := make([]string, 0, len(g.imports))
 	for k := range g.imports {
@@ -285,10 +310,10 @@ func (g *daoGenerator) writeImports() {
 	sort.Strings(importPkgs)
 
 	for _, p := range importPkgs {
-		g.b.WriteString("\t \"" + p + "\"\n")
+		w("\t \"" + p + "\"\n")
 	}
 
-	g.b.WriteString(")\n\n")
+	w(")\n\n")
 }
 
 func (g *daoGenerator) writePackage() {
@@ -334,31 +359,33 @@ func (g *daoGenerator) writeSQL() {
 }
 
 func (g *daoGenerator) writeSQLUpdate() {
-	g.b.WriteString("\n-- name: Update" + strcase.ToCamel(g.table.Name) + "\nupdate " + g.table.Name + "\nset\n")
+	w := g.b.WriteString
+	w("\n-- name: Update" + strcase.ToCamel(g.table.Name) + "\nupdate " + g.table.Name + "\nset\n")
 
 	for i, c := range g.noneKeyColumns {
 		if i > 0 {
-			g.b.WriteString(",")
+			w(",")
 		} else {
-			g.b.WriteString(" ")
+			w(" ")
 		}
 
-		g.b.WriteString("    " + c.ColumnName + " = :" + c.ColumnName + "\n")
+		w("    " + c.ColumnName + " = :" + c.ColumnName + "\n")
 	}
 
-	g.b.WriteString("where\n")
+	w("where\n")
 
 	g.genWhereColumns(false)
 
-	g.b.WriteString(";\n")
+	w(";\n")
 }
 
 func (g *daoGenerator) writeSQLDelete() {
-	g.b.WriteString("\n-- name: Delete" + strcase.ToCamel(g.table.Name) + "\ndelete from " + g.table.Name + "\nwhere\n")
+	w := g.b.WriteString
+	w("\n-- name: Delete" + strcase.ToCamel(g.table.Name) + "\ndelete from " + g.table.Name + "\nwhere\n")
 
 	g.genWhereColumns(true)
 
-	g.b.WriteString(";\n")
+	w(";\n")
 }
 
 func (g *daoGenerator) genWhereColumns(pos bool) {

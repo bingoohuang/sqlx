@@ -364,11 +364,7 @@ func (r *sqlRun) execByName(numIn int, f StructField, outTypes []reflect.Type,
 		return nil, fmt.Errorf("failed to commiterror %w", err)
 	}
 
-	if itemSize == 1 {
-		return convertExecResult(lastResult, lastSQL, outTypes)
-	}
-
-	return []reflect.Value{}, nil
+	return convertExecResult(lastResult, lastSQL, outTypes)
 }
 
 func (p *sqlParsed) createNamedMap(bean reflect.Value) map[string]interface{} {
@@ -721,12 +717,14 @@ func convertExecResult(result sql.Result, stmt string, outTypes []reflect.Type) 
 		return append(results, reflect.ValueOf(rowsAffectedVal).Convert(outTypes[0])), nil
 	}
 
-	if len(outTypes) == 2 { // nolint gomnd
-		return append(results, reflect.ValueOf(rowsAffectedVal).Convert(outTypes[0]),
-			reflect.ValueOf(lastInsertIDVal).Convert(outTypes[1])), nil
+	results = append(results, reflect.ValueOf(rowsAffectedVal).Convert(outTypes[0]),
+		reflect.ValueOf(lastInsertIDVal).Convert(outTypes[1]))
+
+	for i := 2; i < len(outTypes); i++ {
+		results = append(results, reflect.Zero(outTypes[i]))
 	}
 
-	return nil, fmt.Errorf("unsupported returned type %v", outTypes)
+	return results, nil
 }
 
 func convertSQLBindMarks(db *sql.DB, s string) string {

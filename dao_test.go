@@ -26,6 +26,9 @@ type personDao struct {
 	CreateTable func()                         `sql:"create table person(id varchar(100), age int)"`
 	Add         func(person)                   `sql:"insert into person(id, age) values(:id, :age)"`
 	AddAll      func(...person)                `sql:"insert into person(id, age) values(:id, :age)"`
+	AddAll2     func(...person) uint64         `sql:"insert into person(id, age) values(:id, :age)"`
+	AddAll3     func(...person) int            `sql:"insert into person(id, age) values(:id, :age)"`
+	AddAll4     func(...person) (int, error)   `sql:"insert into person(id, age) values(:id, :age)"`
 	Find        func(id string) person         `sql:"select id, age from person where id=:1"`
 	Find2       func(id string) *person        `sql:"select id, age from person where id=:1"`
 	ListAll     func() []person                `sql:"select id, age from person"`
@@ -67,6 +70,15 @@ func TestDao(t *testing.T) {
 	// 匿名结构
 	that.Equal(struct{ Age int }{Age: 200}, dao.GetAge("200"))
 
+	// 多值插入
+	lastInsertID2 := dao.AddAll2(person{"500", 500}, person{"600", 600})
+	assert.True(t, lastInsertID2 > 0)
+	lastInsertID3 := dao.AddAll3(person{"700", 500}, person{"701", 600})
+	assert.True(t, lastInsertID3 > 0)
+
+	lastInsertID4, err := dao.AddAll4(person{"900", 500}, person{"702", 600})
+	assert.True(t, lastInsertID4 > 0)
+	assert.Nil(t, err)
 }
 
 func openDB(t *testing.T) *sql.DB {

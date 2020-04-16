@@ -189,22 +189,22 @@ func (r *sqlRun) createFn(f StructField) error {
 }
 
 func (r *sqlRun) MakeFunc(f StructField, numIn int, numOut int) func([]reflect.Value) ([]reflect.Value, error) {
-	outTypes := makeOutTypes(f.Type, numOut)
-	isQuery := r.IsQuery
-	isBindByName := r.isBindBy(byName)
+	var fn func(int, StructField, []reflect.Type, []reflect.Value) ([]reflect.Value, error)
 
-	switch {
-	case !isQuery && isBindByName:
-		return func(args []reflect.Value) ([]reflect.Value, error) { return r.execByName(numIn, f, outTypes, args) }
-	case !isQuery && !isBindByName:
-		return func(args []reflect.Value) ([]reflect.Value, error) { return r.execBySeq(numIn, f, outTypes, args) }
-	case isQuery && isBindByName:
-		return func(args []reflect.Value) ([]reflect.Value, error) { return r.queryByName(numIn, f, outTypes, args) }
-	case isQuery && !isBindByName:
-		return func(args []reflect.Value) ([]reflect.Value, error) { return r.queryBySeq(numIn, f, outTypes, args) }
+	switch isBindByName := r.isBindBy(byName); {
+	case !r.IsQuery && isBindByName:
+		fn = r.execByName
+	case !r.IsQuery && !isBindByName:
+		fn = r.execBySeq
+	case r.IsQuery && isBindByName:
+		fn = r.queryByName
+	default: // isQuery && !isBindByName:
+		fn = r.queryBySeq
 	}
 
-	return nil
+	return func(args []reflect.Value) ([]reflect.Value, error) {
+		return fn(numIn, f, makeOutTypes(f.Type, numOut), args)
+	}
 }
 
 func makeOutTypes(outType reflect.Type, numOut int) []reflect.Type {

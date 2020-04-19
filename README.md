@@ -30,3 +30,4 @@ more about golang db sql
 1. [Interceptors for database/sql](https://github.com/ngrok/sqlmw)
 1. [Generate type safe Go from SQL sqlc.dev](https://github.com/kyleconroy/sqlc)
 1. [Golang SQL Database Layer for Layered Architecture. fs02.github.io/rel](https://github.com/Fs02/rel)
+1. [dbq Zero boilerplate database operations for Go](https://github.com/rocketlaunchr/dbq)

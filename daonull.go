@@ -52,6 +52,13 @@ func (n *NullAny) Scan(value interface{}) error {
 		}
 
 		n.Val = reflect.ValueOf(sn.Int32).Convert(n.Type)
+	case reflect.Float32, reflect.Float64:
+		sn := &sql.NullFloat64{}
+		if err := sn.Scan(value); err != nil {
+			return err
+		}
+
+		n.Val = reflect.ValueOf(sn.Float64).Convert(n.Type)
 	case reflect.Bool:
 		sn := &sql.NullBool{}
 		if err := sn.Scan(value); err != nil {

@@ -81,7 +81,7 @@ func compatibleGoSSHHost(s string) (string, bool) {
 	props := parseProps(fields)
 	db := ""
 
-	if v, ok := props["sdb"]; ok {
+	if v, ok := props["db"]; ok {
 		db = v
 	}
 

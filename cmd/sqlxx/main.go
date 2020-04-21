@@ -26,6 +26,7 @@ import (
 type opts struct {
 	DataSource string `short:"d" required:"true" long:"dsn" description:"dsn, eg. root:8BE4@127.0.0.1:9633/test"`
 	Pkg        string `short:"p" required:"false" long:"pkg" description:"package name, default lowercase of database name"`
+	Tags       string `short:"t" required:"false" long:"tags" default:"json" description:"tags, eg. json"`
 }
 
 // Table ...
@@ -103,7 +104,7 @@ func main() {
 
 	_ = os.MkdirAll(pkg, 0750)
 
-	gen(columns, tablesMap, pkg)
+	gen(columns, tablesMap, pkg, opt)
 }
 
 // FixPkgName fixes the package name to all lower case with letters and digits kept.
@@ -125,7 +126,7 @@ func FixPkgName(pkgName string) string {
 	return name
 }
 
-func gen(columns []Column, tablesMap map[string]Table, pkg string) {
+func gen(columns []Column, tablesMap map[string]Table, pkg string, opt *opts) {
 	table := ""
 
 	var (
@@ -150,7 +151,7 @@ func gen(columns []Column, tablesMap map[string]Table, pkg string) {
 			}
 
 			table = c.TableName
-			dg = newDaoGenerator(tablesMap[table], pkg)
+			dg = newDaoGenerator(tablesMap[table], pkg, opt)
 		}
 
 		if dg != nil {
@@ -165,13 +166,14 @@ func gen(columns []Column, tablesMap map[string]Table, pkg string) {
 	}
 }
 
-func newDaoGenerator(table Table, pkg string) *daoGenerator {
+func newDaoGenerator(table Table, pkg string, opt *opts) *daoGenerator {
 	return &daoGenerator{
 		table:         table,
 		pkg:           pkg,
 		structColumns: make([]string, 0),
 		columns:       make([]Column, 0),
 		imports:       make(map[string]bool),
+		opt:           opt,
 	}
 }
 
@@ -185,6 +187,7 @@ type daoGenerator struct {
 	keyColumns     []Column
 	noneKeyColumns []Column
 	autoIncrement  bool
+	opt            *opts
 }
 
 func (g *daoGenerator) complete() {
@@ -337,7 +340,13 @@ func (g *daoGenerator) addColumn(c Column) {
 	}
 
 	b.WriteString("\t" + strcase.ToCamel(c.ColumnName) +
-		" " + colGoType + " `name:\"" + c.ColumnName + "\" `")
+		" " + colGoType + " `name:\"" + c.ColumnName + "\"")
+
+	if str.ContainsWord(g.opt.Tags, ",", "json") {
+		b.WriteString(` json:"` + strcase.ToCamelLower(c.ColumnName) + `"`)
+	}
+
+	b.WriteString("`")
 
 	if fc := line(c.Comment); fc != "" {
 		b.WriteString("// " + fc)

@@ -230,7 +230,7 @@ func (g *daoGenerator) writeDAOCreator() {
 	w("\n")
 	// nolint lll
 	w("\tif err := sqlx.CreateDao(dao, sqlx.WithSQLStr(" + strcase.ToCamelLower(g.table.Name) + "SQL)); err != nil {\n")
-	w("\t\treturn nil, err;\n")
+	w("\t\treturn nil, err\n")
 	w("\t}\n")
 	w("\n")
 	w("\treturn dao, nil\n")

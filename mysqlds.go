@@ -45,7 +45,7 @@ func CompatibleMySQLDs(s string) string {
 func compatibleDBURL(s string) (string, bool) {
 	// user:pass@localhost/dbname
 	// betaapiadmin:xx@123.206.185.162:3306/metrics_ump
-	atPos := strings.Index(s, "@")
+	atPos := strings.LastIndex(s, "@")
 	up := s[:atPos]
 	user, password := str.Split2(up, ":", true, true)
 

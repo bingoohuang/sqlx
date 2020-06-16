@@ -8,7 +8,7 @@ import (
 )
 
 // 参考 https://github.com/uber-go/dig/blob/master/types.go
-// nolint gochecknoglobals
+// nolint:gochecknoglobals
 var (
 	_sqlScannerType = reflect.TypeOf((*sql.Scanner)(nil)).Elem()
 )

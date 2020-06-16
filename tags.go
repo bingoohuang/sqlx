@@ -18,10 +18,10 @@ var (
 	ErrTagValueSyntax = errors.New("bad syntax for struct tag value")
 )
 
-// Tags represent a set of tags from a single struct field
+// Tags represent a set of tags from a single struct field.
 type Tags map[string]Tag
 
-// Tag defines a single struct's string literal tag
+// Tag defines a single struct's string literal tag.
 type Tag struct {
 	// Key is the tag key, such as json, xml, etc..
 	// i.e: `json:"foo,omitempty". Here key is: "json"
@@ -33,7 +33,7 @@ type Tag struct {
 }
 
 // ParseTags parses a single struct field tag and returns the set of tags.
-// nolint funlen
+// nolint:funlen,gocognit
 func ParseTags(tag string) (Tags, error) {
 	tags := make(map[string]Tag)
 
@@ -125,7 +125,7 @@ func (t Tags) Keys() []string {
 	return keys
 }
 
-// String reassembles the tags into a valid literal tag field representation
+// String reassembles the tags into a valid literal tag field representation.
 func (t Tags) String() string {
 	tags := t
 	if len(tags) == 0 {
@@ -150,7 +150,7 @@ func (t Tags) String() string {
 	return buf.String()
 }
 
-// Map convert tags to map[string]string
+// Map convert tags to map[string]string.
 func (t Tags) Map() map[string]string {
 	m := make(map[string]string)
 
@@ -171,12 +171,12 @@ func (t Tags) GetOrDefault(key, defaultValue string) string {
 	return defaultValue
 }
 
-// String reassembles the tag into a valid tag field representation
+// String reassembles the tag into a valid tag field representation.
 func (t Tag) String() string {
 	return fmt.Sprintf(`%s:%q`, t.Key, t.Value)
 }
 
-// GoString implements the fmt.GoStringer interface
+// GoString implements the fmt.GoStringer interface.
 func (t Tag) GoString() string {
 	template := `{
 		Key:    '%s',

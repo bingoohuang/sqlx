@@ -1,4 +1,3 @@
-// nolint gomnd
 package sqlx_test
 
 import (
@@ -15,13 +14,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// person 结构体，对应到person表字段
+// person 结构体，对应到person表字段.
 type person struct {
 	ID  string
 	Age int
 }
 
-// personDao 定义对person表操作的所有方法
+// personDao 定义对person表操作的所有方法.
 type personDao struct {
 	CreateTable func()                         `sql:"create table person(id varchar(100), age int)"`
 	Add         func(person)                   `sql:"insert into person(id, age) values(:id, :age)"`
@@ -73,6 +72,7 @@ func TestDao(t *testing.T) {
 	// 多值插入
 	lastInsertID2 := dao.AddAll2(person{"500", 500}, person{"600", 600})
 	assert.True(t, lastInsertID2 > 0)
+
 	lastInsertID3 := dao.AddAll3(person{"700", 500}, person{"701", 600})
 	assert.True(t, lastInsertID3 > 0)
 
@@ -89,7 +89,7 @@ func openDB(t *testing.T) *sql.DB {
 	return db
 }
 
-// personDao2 定义对person表操作的所有方法
+// personDao2 定义对person表操作的所有方法.
 type personDao2 struct {
 	CreateTable func()          `sql:"create table person(id varchar(100), age int)"`
 	AddAll      func(...person) `sql:"insert into person(id, age) values(:id, :age)"`
@@ -109,6 +109,7 @@ func TestDaoWithError(t *testing.T) {
 	dao := &personDao2{}
 
 	var err error
+
 	sqlx.DB = openDB(t)
 	that.Nil(sqlx.CreateDao(dao, sqlx.WithError(&err)))
 
@@ -173,7 +174,7 @@ func TestDaoWithRowScanInterceptor(t *testing.T) {
 	that.Equal(person{"300", 300}, p)
 }
 
-// personDao3 定义对person表操作的所有方法
+// personDao3 定义对person表操作的所有方法.
 type personDao3 struct {
 	CreateTable func()
 	AddAll      func(...person)
@@ -226,13 +227,13 @@ func TestDaoWithDotSQLFile(t *testing.T) {
 	that.Equal([]person{{"300", 300}, {"400", 400}}, dao.ListAll())
 }
 
-// person 结构体，对应到person表字段
+// person 结构体，对应到person表字段.
 type person4 struct {
 	ID  sql.NullString
 	Age int
 }
 
-// person 结构体，对应到person表字段
+// person 结构体，对应到person表字段.
 type person5 struct {
 	ID    string
 	Age   int
@@ -242,12 +243,12 @@ type person5 struct {
 
 type Addr string
 
-// person 结构体，对应到person表字段
+// person 结构体，对应到person表字段.
 type person6 struct {
 	Addr Addr
 }
 
-// personDao4 定义对person表操作的所有方法
+// personDao4 定义对person表操作的所有方法.
 type personDao4 struct {
 	CreateTable func()            `sql:"create table person(id varchar(100), age int, addr varchar(10) default 'bj')"`
 	AddID       func(int)         `sql:"insert into person(age, addr) values(:1, 'zags')"`
@@ -277,7 +278,7 @@ func TestNullString(t *testing.T) {
 	that.Equal(person6{Addr: "zags"}, p3)
 }
 
-// personMap 结构体，对应到person表字段
+// personMap 结构体，对应到person表字段.
 type personMap struct {
 	ID   string
 	Age  int
@@ -301,7 +302,7 @@ select count(*) from person
 select id, addr from person where id=:1
 `
 
-// personDaoMap 定义对person表操作的所有方法
+// personDaoMap 定义对person表操作的所有方法.
 type personDaoMap struct {
 	CreateTable func()
 	Add         func(m M)
@@ -396,7 +397,7 @@ and age = :age
 ;
 `
 
-// personDaoDynamic 定义对person表操作的所有方法
+// personDaoDynamic 定义对person表操作的所有方法.
 type personDaoDynamic struct {
 	CreateTable func()
 	Add         func(m M)
@@ -484,7 +485,7 @@ func (m MyTime) MarshalJSON() ([]byte, error) {
 	return []byte(strconv.Quote(s)), nil
 }
 
-// Value - Implementation of valuer for database/sql
+// Value - Implementation of valuer for database/sql.
 func (m MyTime) Value() (driver.Value, error) {
 	return driver.Value(time.Time(m)), nil
 }
@@ -528,12 +529,15 @@ func TestTime(t *testing.T) {
 	that.Nil(sqlx.CreateDao(dao, sqlx.WithDB(openDB(t)), sqlx.WithSQLStr(dotSQLTime)))
 
 	now, _ := time.Parse("2006-01-02 15:04:05", "2020-03-31 17:17:40")
+
 	dao.CreateTable()
+
 	p := personTime{
 		Age:      10,
 		Addr:     "aa",
 		Birthday: MyTime(now),
 	}
+
 	lastInsertID := dao.Add(p)
 	p.ID = lastInsertID
 

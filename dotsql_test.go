@@ -1,11 +1,12 @@
-// nolint gomnd
-package sqlx
+package sqlx_test
 
 import (
 	"bufio"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/bingoohuang/sqlx"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
@@ -27,7 +28,7 @@ func TestGetTag(t *testing.T) {
 	}
 
 	for _, c := range tests {
-		attrs, name := ParseDotTag(c.line, "--", "name")
+		attrs, name := sqlx.ParseDotTag(c.line, "--", "name")
 		if name != c.want {
 			t.Errorf("isTag('%s') == %s, expect %s", c.line, name, c.want)
 		}
@@ -48,7 +49,7 @@ func TestScannerRun(t *testing.T) {
 	INSERT INTO users (?, ?, ?)
 	`
 
-	scanner := &DotSQLScanner{}
+	scanner := &sqlx.DotSQLScanner{}
 	queries := scanner.Run(bufio.NewScanner(strings.NewReader(sqlFile)))
 
 	numberOfQueries := len(queries)
@@ -61,30 +62,30 @@ func TestScannerRun(t *testing.T) {
 }
 
 func TestLoad(t *testing.T) {
-	_, err := DotSQLLoad(strings.NewReader(""))
+	_, err := sqlx.DotSQLLoad(strings.NewReader(""))
 	assert.Nil(t, err)
 }
 
 func TestLoadFromFile(t *testing.T) {
-	dot, err := DotSQLLoadFile("./non-existent.sql")
+	dot, err := sqlx.DotSQLLoadFile("./non-existent.sql")
 	assert.NotNil(t, err, "error expected to be non-nil, got nil")
 	assert.Nil(t, dot, "dotsql instance expected to be nil, got non-nil")
 
-	dot, err = DotSQLLoadFile("testdata/test_schema.sql")
+	dot, err = sqlx.DotSQLLoadFile("testdata/test_schema.sql")
 	assert.Nil(t, err)
 
 	assert.NotNil(t, dot, "dotsql instance expected to be non-nil, got nil")
 }
 
 func TestLoadFromString(t *testing.T) {
-	_, err := DotSQLLoadString("")
+	_, err := sqlx.DotSQLLoadString("")
 	assert.Nil(t, err)
 }
 
 func TestRaw(t *testing.T) {
 	expectedQuery := "SELECT 1+1"
 
-	dot, err := DotSQLLoadString("--name: my-query\n" + expectedQuery)
+	dot, err := sqlx.DotSQLLoadString("--name: my-query\n" + expectedQuery)
 	assert.Nil(t, err)
 
 	eval, err := dot.Raw("my-query")
@@ -101,7 +102,7 @@ func TestQueries(t *testing.T) {
 		"insert": "INSERT INTO users (?, ?, ?)",
 	}
 
-	dot, err := DotSQLLoadString(`
+	dot, err := sqlx.DotSQLLoadString(`
 -- name: select
 SELECT *
 from users;
@@ -125,42 +126,42 @@ INSERT INTO users (?, ?, ?)
 }
 
 func TestParseSQL(t *testing.T) {
-	parsed, err := parseSQL("auto", "insert into person(name, age) values(:name, :age)")
+	parsed, err := sqlx.ParseSQL("auto", "insert into person(name, age) values(:name, :age)")
 	assert.Nil(t, err)
-	assert.Equal(t, &sqlParsed{
+	assert.Equal(t, &sqlx.SQLParsed{
 		Stmt:   "insert into person(name, age) values(?, ?)",
-		BindBy: byName,
+		BindBy: sqlx.ByName,
 		Vars:   []string{"name", "age"},
 		MaxSeq: 2,
 	}, parsed)
 
-	parsed, err = parseSQL("auto", "insert into person(name, age) values(:1, :2)")
+	parsed, err = sqlx.ParseSQL("auto", "insert into person(name, age) values(:1, :2)")
 	assert.Nil(t, err)
-	assert.Equal(t, &sqlParsed{
+	assert.Equal(t, &sqlx.SQLParsed{
 		Stmt:   "insert into person(name, age) values(?, ?)",
-		BindBy: bySeq,
+		BindBy: sqlx.BySeq,
 		Vars:   []string{"1", "2"},
 		MaxSeq: 2,
 	}, parsed)
 
-	parsed, err = parseSQL("auto", "insert into person(name, age) values(:, :)")
+	parsed, err = sqlx.ParseSQL("auto", "insert into person(name, age) values(:, :)")
 	assert.Nil(t, err)
-	assert.Equal(t, &sqlParsed{
+	assert.Equal(t, &sqlx.SQLParsed{
 		Stmt:   "insert into person(name, age) values(?, ?)",
-		BindBy: byAuto,
+		BindBy: sqlx.ByAuto,
 		Vars:   []string{"", ""},
 		MaxSeq: 2,
 	}, parsed)
 
-	parsed, err = parseSQL("auto", "insert into person(name, age) values('a', 'b')")
+	parsed, err = sqlx.ParseSQL("auto", "insert into person(name, age) values('a', 'b')")
 	assert.Nil(t, err)
-	assert.Equal(t, &sqlParsed{
+	assert.Equal(t, &sqlx.SQLParsed{
 		Stmt:   "insert into person(name, age) values('a', 'b')",
-		BindBy: byNone,
+		BindBy: sqlx.ByNone,
 		Vars:   []string{},
 	}, parsed)
 
-	parsed, err = parseSQL("auto", "insert into person(name, age) values(:, :age)")
+	parsed, err = sqlx.ParseSQL("auto", "insert into person(name, age) values(:, :age)")
 	assert.Nil(t, parsed)
 	assert.NotNil(t, err)
 }
@@ -168,29 +169,30 @@ func TestParseSQL(t *testing.T) {
 func TestConvertSQLLines(t *testing.T) {
 	that := assert.New(t)
 
-	that.Equal([]string{"a\nb\nc"}, ConvertSQLLines([]string{"a", "b", "c"}))
-	that.Equal([]string{"--a", "b\nc"}, ConvertSQLLines([]string{"--a", "b", "c"}))
-	that.Equal([]string{"-- if", "b", "-- end"}, ConvertSQLLines([]string{"-- if", "b", "-- end"}))
-	that.Equal([]string{"-- if", "b", "-- end"}, ConvertSQLLines([]string{"/* if */ b /* end */"}))
-	that.Equal([]string{"-- if", "b", "-- end"}, ConvertSQLLines([]string{"/* if */ ", "b", " /* end */"}))
-	that.Equal([]string{"-- if", "b\nc", "-- end"}, ConvertSQLLines([]string{"/* if */ ", "b", "c", " /* end */"}))
-	that.Equal([]string{"-- if", "b\nc", "-- end"}, ConvertSQLLines([]string{"/* if  ", "*/b", "c/*", " end */"}))
+	that.Equal([]string{"a\nb\nc"}, sqlx.ConvertSQLLines([]string{"a", "b", "c"}))
+	that.Equal([]string{"--a", "b\nc"}, sqlx.ConvertSQLLines([]string{"--a", "b", "c"}))
+	that.Equal([]string{"-- if", "b", "-- end"}, sqlx.ConvertSQLLines([]string{"-- if", "b", "-- end"}))
+	that.Equal([]string{"-- if", "b", "-- end"}, sqlx.ConvertSQLLines([]string{"/* if */ b /* end */"}))
+	that.Equal([]string{"-- if", "b", "-- end"}, sqlx.ConvertSQLLines([]string{"/* if */ ", "b", " /* end */"}))
+	that.Equal([]string{"-- if", "b\nc", "-- end"}, sqlx.ConvertSQLLines([]string{"/* if */ ", "b", "c", " /* end */"}))
+	that.Equal([]string{"-- if", "b\nc", "-- end"}, sqlx.ConvertSQLLines([]string{"/* if  ", "*/b", "c/*", " end */"}))
 }
 
+// nolint:funlen
 func TestParseDynamicSQL(t *testing.T) {
 	that := assert.New(t)
 
 	{
-		lines, part, err := ParseDynamicSQL([]string{"-- if a", "b", "-- end"})
+		lines, part, err := sqlx.ParseDynamicSQL([]string{"-- if a", "b", "-- end"})
 		that.Nil(err)
 		that.Equal(3, lines)
-		that.Equal(&MultiPart{Parts: []SQLPart{
-			&IfPart{
-				Conditions: []IfCondition{
+		that.Equal(&sqlx.MultiPart{Parts: []sqlx.SQLPart{
+			&sqlx.IfPart{
+				Conditions: []sqlx.IfCondition{
 					{
 						Expr: "a",
-						Part: &MultiPart{
-							Parts: []SQLPart{&LiteralPart{Literal: "b"}},
+						Part: &sqlx.MultiPart{
+							Parts: []sqlx.SQLPart{&sqlx.LiteralPart{Literal: "b"}},
 						},
 					},
 				},
@@ -200,43 +202,44 @@ func TestParseDynamicSQL(t *testing.T) {
 	}
 
 	{
-		lines, part, err := ParseDynamicSQL([]string{"-- if a", "b", "-- else ", "c", "-- end"})
+		lines, part, err := sqlx.ParseDynamicSQL([]string{"-- if a", "b", "-- else ", "c", "-- end"})
 		that.Nil(err)
 		that.Equal(5, lines)
-		that.Equal(&MultiPart{Parts: []SQLPart{
-			&IfPart{
-				Conditions: []IfCondition{
+		that.Equal(&sqlx.MultiPart{Parts: []sqlx.SQLPart{
+			&sqlx.IfPart{
+				Conditions: []sqlx.IfCondition{
 					{
 						Expr: "a",
-						Part: &MultiPart{
-							Parts: []SQLPart{&LiteralPart{Literal: "b"}},
+						Part: &sqlx.MultiPart{
+							Parts: []sqlx.SQLPart{&sqlx.LiteralPart{Literal: "b"}},
 						},
 					},
 				},
-				Else: &MultiPart{
-					Parts: []SQLPart{&LiteralPart{Literal: "c"}},
+				Else: &sqlx.MultiPart{
+					Parts: []sqlx.SQLPart{&sqlx.LiteralPart{Literal: "c"}},
 				},
 			},
 		}}, part)
 	}
 
 	{
-		lines, part, err := ParseDynamicSQL([]string{"-- if a", "-- if b", "b", "-- end", "-- else ", "-- if c", "c", "-- end", "-- end"})
+		// nolint:lll
+		lines, part, err := sqlx.ParseDynamicSQL([]string{"-- if a", "-- if b", "b", "-- end", "-- else ", "-- if c", "c", "-- end", "-- end"})
 		that.Nil(err)
 		that.Equal(9, lines)
-		that.Equal(&MultiPart{Parts: []SQLPart{
-			&IfPart{
-				Conditions: []IfCondition{
+		that.Equal(&sqlx.MultiPart{Parts: []sqlx.SQLPart{
+			&sqlx.IfPart{
+				Conditions: []sqlx.IfCondition{
 					{
 						Expr: "a",
-						Part: &MultiPart{
-							Parts: []SQLPart{
-								&IfPart{
-									Conditions: []IfCondition{
+						Part: &sqlx.MultiPart{
+							Parts: []sqlx.SQLPart{
+								&sqlx.IfPart{
+									Conditions: []sqlx.IfCondition{
 										{
 											Expr: "b",
-											Part: &MultiPart{
-												Parts: []SQLPart{&LiteralPart{Literal: "b"}},
+											Part: &sqlx.MultiPart{
+												Parts: []sqlx.SQLPart{&sqlx.LiteralPart{Literal: "b"}},
 											},
 										},
 									},
@@ -245,14 +248,14 @@ func TestParseDynamicSQL(t *testing.T) {
 						},
 					},
 				},
-				Else: &MultiPart{
-					Parts: []SQLPart{
-						&IfPart{
-							Conditions: []IfCondition{
+				Else: &sqlx.MultiPart{
+					Parts: []sqlx.SQLPart{
+						&sqlx.IfPart{
+							Conditions: []sqlx.IfCondition{
 								{
 									Expr: "c",
-									Part: &MultiPart{
-										Parts: []SQLPart{&LiteralPart{Literal: "c"}},
+									Part: &sqlx.MultiPart{
+										Parts: []sqlx.SQLPart{&sqlx.LiteralPart{Literal: "c"}},
 									},
 								},
 							},
@@ -264,21 +267,21 @@ func TestParseDynamicSQL(t *testing.T) {
 	}
 
 	{
-		lines, part, err := ParseDynamicSQL([]string{"-- if a", "a", "-- elseif b ", "b", "-- end"})
+		lines, part, err := sqlx.ParseDynamicSQL([]string{"-- if a", "a", "-- elseif b ", "b", "-- end"})
 		that.Nil(err)
 		that.Equal(5, lines)
-		that.Equal(&MultiPart{Parts: []SQLPart{
-			&IfPart{
-				Conditions: []IfCondition{
+		that.Equal(&sqlx.MultiPart{Parts: []sqlx.SQLPart{
+			&sqlx.IfPart{
+				Conditions: []sqlx.IfCondition{
 					{
 						Expr: "a",
-						Part: &MultiPart{
-							Parts: []SQLPart{&LiteralPart{Literal: "a"}},
+						Part: &sqlx.MultiPart{
+							Parts: []sqlx.SQLPart{&sqlx.LiteralPart{Literal: "a"}},
 						},
 					}, {
 						Expr: "b",
-						Part: &MultiPart{
-							Parts: []SQLPart{&LiteralPart{Literal: "b"}},
+						Part: &sqlx.MultiPart{
+							Parts: []sqlx.SQLPart{&sqlx.LiteralPart{Literal: "b"}},
 						},
 					},
 				},
@@ -287,27 +290,28 @@ func TestParseDynamicSQL(t *testing.T) {
 	}
 
 	{
-		lines, part, err := ParseDynamicSQL([]string{"-- if a", "-- if b", "ab", "-- elseif c ", "ac", "-- end", "-- end"})
+		// nolint:lll
+		lines, part, err := sqlx.ParseDynamicSQL([]string{"-- if a", "-- if b", "ab", "-- elseif c ", "ac", "-- end", "-- end"})
 		that.Nil(err)
 		that.Equal(7, lines)
-		that.Equal(&MultiPart{Parts: []SQLPart{
-			&IfPart{
-				Conditions: []IfCondition{
+		that.Equal(&sqlx.MultiPart{Parts: []sqlx.SQLPart{
+			&sqlx.IfPart{
+				Conditions: []sqlx.IfCondition{
 					{
 						Expr: "a",
-						Part: &MultiPart{
-							Parts: []SQLPart{
-								&IfPart{
-									Conditions: []IfCondition{
+						Part: &sqlx.MultiPart{
+							Parts: []sqlx.SQLPart{
+								&sqlx.IfPart{
+									Conditions: []sqlx.IfCondition{
 										{
 											Expr: "b",
-											Part: &MultiPart{
-												Parts: []SQLPart{&LiteralPart{"ab"}},
+											Part: &sqlx.MultiPart{
+												Parts: []sqlx.SQLPart{&sqlx.LiteralPart{Literal: "ab"}},
 											},
 										}, {
 											Expr: "c",
-											Part: &MultiPart{
-												Parts: []SQLPart{&LiteralPart{"ac"}},
+											Part: &sqlx.MultiPart{
+												Parts: []sqlx.SQLPart{&sqlx.LiteralPart{Literal: "ac"}},
 											},
 										},
 									},
@@ -321,28 +325,28 @@ func TestParseDynamicSQL(t *testing.T) {
 	}
 
 	{
-		lines, part, err := ParseDynamicSQL([]string{"-- if a", "-- if b", "ab", "-- elseif c ", "ac", "-- end",
+		lines, part, err := sqlx.ParseDynamicSQL([]string{"-- if a", "-- if b", "ab", "-- elseif c ", "ac", "-- end",
 			"-- else ", "x", "-- end"})
 		that.Nil(err)
 		that.Equal(9, lines)
-		that.Equal(&MultiPart{Parts: []SQLPart{
-			&IfPart{
-				Conditions: []IfCondition{
+		that.Equal(&sqlx.MultiPart{Parts: []sqlx.SQLPart{
+			&sqlx.IfPart{
+				Conditions: []sqlx.IfCondition{
 					{
 						Expr: "a",
-						Part: &MultiPart{
-							Parts: []SQLPart{
-								&IfPart{
-									Conditions: []IfCondition{
+						Part: &sqlx.MultiPart{
+							Parts: []sqlx.SQLPart{
+								&sqlx.IfPart{
+									Conditions: []sqlx.IfCondition{
 										{
 											Expr: "b",
-											Part: &MultiPart{Parts: []SQLPart{
-												&LiteralPart{"ab"},
+											Part: &sqlx.MultiPart{Parts: []sqlx.SQLPart{
+												&sqlx.LiteralPart{Literal: "ab"},
 											}},
 										}, {
 											Expr: "c",
-											Part: &MultiPart{Parts: []SQLPart{
-												&LiteralPart{"ac"},
+											Part: &sqlx.MultiPart{Parts: []sqlx.SQLPart{
+												&sqlx.LiteralPart{Literal: "ac"},
 											}},
 										},
 									},
@@ -351,7 +355,7 @@ func TestParseDynamicSQL(t *testing.T) {
 						},
 					},
 				},
-				Else: &MultiPart{Parts: []SQLPart{&LiteralPart{
+				Else: &sqlx.MultiPart{Parts: []sqlx.SQLPart{&sqlx.LiteralPart{
 					Literal: "x",
 				}}},
 			},

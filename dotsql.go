@@ -16,7 +16,7 @@ import (
 	"github.com/antonmedv/expr/vm"
 )
 
-// DotSQLItem tells the SQL details
+// DotSQLItem tells the SQL details.
 type DotSQLItem struct {
 	Content []string
 	Name    string
@@ -26,7 +26,7 @@ type DotSQLItem struct {
 var re = regexp.MustCompile(`\s*(\w+)\s*(:\s*(\S+))?`) // nolint
 
 // ParseDotTag parses the tag like name:value age:34 adult to map
-// returns the map and main tag's value
+// returns the map and main tag's value.
 func ParseDotTag(line, prefix, mainTag string) (map[string]string, string) {
 	l := strings.TrimSpace(line)
 	if !strings.HasPrefix(l, prefix) {
@@ -86,7 +86,7 @@ func (s *DotSQLScanner) appendQueryLine() {
 	s.queries[s.current.Name] = s.current
 }
 
-// Run runs the scanner
+// Run runs the scanner.
 func (s *DotSQLScanner) Run(io *bufio.Scanner) map[string]DotSQLItem {
 	s.queries = make(map[string]DotSQLItem)
 
@@ -98,12 +98,12 @@ func (s *DotSQLScanner) Run(io *bufio.Scanner) map[string]DotSQLItem {
 	return s.queries
 }
 
-// DotSQL is the set of SQL statements
+// DotSQL is the set of SQL statements.
 type DotSQL struct {
 	Sqls map[string]DotSQLItem
 }
 
-// Raw returns the query, everything after the --name tag
+// Raw returns the query, everything after the --name tag.
 func (d DotSQL) Raw(name string) (SQLPart, error) {
 	v, err := d.lookupQuery(name)
 
@@ -113,7 +113,7 @@ func (d DotSQL) Raw(name string) (SQLPart, error) {
 func (d DotSQL) lookupQuery(name string) (query SQLPart, err error) {
 	s, ok := d.Sqls[name]
 	if !ok {
-		return nil, fmt.Errorf("dotsql: '%s' could not be found", name)
+		return nil, fmt.Errorf("dotsql: '%s' could not be found", name) // nolint:goerr113
 	}
 
 	query, err = s.DynamicSQL()
@@ -297,7 +297,7 @@ func (p *IfPart) Eval(env map[string]interface{}) (string, error) {
 		}
 
 		if yes, ok := output.(bool); !ok {
-			return "", fmt.Errorf("%s is not a bool expression", c.Expr)
+			return "", fmt.Errorf("%s is not a bool expression", c.Expr) // nolint:goerr113
 		} else if yes {
 			return c.Part.Eval(env)
 		}
@@ -397,30 +397,32 @@ func ParseDynamicSQL(lines []string, terminators ...string) (int, SQLPart, error
 
 	for i := 0; i < len(lines); i++ {
 		l := lines[i]
-		if strings.HasPrefix(l, "--") {
-			commentLine := strings.TrimSpace(l[2:])
-			word := firstWord(commentLine, 1)
-			parser := CreateParser(word, strings.TrimSpace(commentLine[len(word):]))
 
-			if parser == nil { // no parser found, ignore comment line
-				if funk.ContainsString(terminators, word) {
-					return i, multiPart, nil
-				}
-
-				continue
-			}
-
-			partLines, part, err := parser.Parse(lines[i+1:])
-			if err != nil {
-				return 0, nil, err
-			}
-
-			multiPart.AddPart(part)
-
-			i += partLines - 1 // nolint gomnd
-		} else {
+		if !strings.HasPrefix(l, "--") {
 			multiPart.AddPart(MakeLiteralPart(l))
+			continue
 		}
+
+		commentLine := strings.TrimSpace(l[2:])
+		word := firstWord(commentLine, 1)
+		parser := CreateParser(word, strings.TrimSpace(commentLine[len(word):]))
+
+		if parser == nil { // no parser found, ignore comment line
+			if funk.ContainsString(terminators, word) {
+				return i, multiPart, nil
+			}
+
+			continue
+		}
+
+		partLines, part, err := parser.Parse(lines[i+1:])
+		if err != nil {
+			return 0, nil, err
+		}
+
+		multiPart.AddPart(part)
+
+		i += partLines - 1
 	}
 
 	return len(lines), multiPart, nil
@@ -428,7 +430,7 @@ func ParseDynamicSQL(lines []string, terminators ...string) (int, SQLPart, error
 
 // ConvertSQLLines converts the inline comments to line comments
 // and merge the uncomment lines together.
-// nolint funlen
+// nolint:funlen
 func ConvertSQLLines(lines []string) []string {
 	inlineCommentMode := false
 	noneComment := ""
@@ -581,13 +583,13 @@ func (p *IfSQLPartParser) Parse(lines []string) (partLines int, part SQLPart, er
 
 		ifPart.AddCondition(condition, sqlPart)
 
-		i += processLines - 1 // nolint gomnd
+		i += processLines - 1
 	}
 
-	return 0, nil, fmt.Errorf("no end found for if expr")
+	return 0, nil, fmt.Errorf("no end found for if expr") // nolint:goerr113
 }
 
-// MakeLiteralMultiPart makes a MultiPart
+// MakeLiteralMultiPart makes a MultiPart.
 func MakeLiteralMultiPart(l string) *MultiPart {
 	return &MultiPart{Parts: []SQLPart{&LiteralPart{l}}}
 }

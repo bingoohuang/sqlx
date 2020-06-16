@@ -5,7 +5,7 @@ import (
 	"unicode/utf8"
 )
 
-// SplitSqls splits sqls by separate
+// SplitSqls splits sqls by separate.
 func SplitSqls(sqls string, separate rune) []string {
 	subs := make([]string, 0)
 

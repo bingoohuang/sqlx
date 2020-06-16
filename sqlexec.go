@@ -26,7 +26,7 @@ type SQLExec interface {
 	Query(query string, args ...interface{}) (*sql.Rows, error)
 }
 
-// ExecSQL executes a SQL
+// ExecSQL executes a SQL.
 func ExecSQL(db SQLExec, sqlStr string, maxRows int, nullReplace string) ExecResult {
 	firstKey, isQuerySQL := IsQuerySQL(sqlStr)
 
@@ -116,7 +116,7 @@ func execNonQuery(db SQLExec, sqlStr string, firstKey string) ExecResult {
 	}
 }
 
-// IsQuerySQL tests a sql is a query or not
+// IsQuerySQL tests a sql is a query or not.
 func IsQuerySQL(sql string) (string, bool) {
 	key := FirstWord(sql)
 
@@ -148,7 +148,7 @@ func IfElse(ifCondition bool, ifValue, elseValue string) string {
 	return elseValue
 }
 
-// ContainsIgnoreCase tell if a contains b in case-insensitively
+// ContainsIgnoreCase tell if a contains b in case-insensitively.
 func ContainsIgnoreCase(a, b string) bool {
 	return strings.Contains(strings.ToUpper(a), strings.ToUpper(b))
 }

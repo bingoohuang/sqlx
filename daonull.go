@@ -7,7 +7,7 @@ import (
 )
 
 // NullAny represents any that may be null.
-// NullAny implements the Scanner interface so it can be used as a scan destination:
+// NullAny implements the Scanner interface so it can be used as a scan destination.
 type NullAny struct {
 	Type reflect.Type
 	Val  reflect.Value
@@ -89,7 +89,7 @@ func (n *NullAny) Scan(value interface{}) error {
 	return nil
 }
 
-// nolint gochecknoglobals
+// nolint:gochecknoglobals
 var (
 	timeType = reflect.TypeOf((*time.Time)(nil)).Elem()
 )

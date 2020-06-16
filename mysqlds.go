@@ -83,7 +83,7 @@ func IsIPv6(str string) bool {
 func compatibleGoSSHHost(s string) (string, bool) {
 	// 127.0.0.1:9633 root/8BE4 [sdb=sdb]
 	fields := str.FieldsX(s, "", "", 3)
-	if len(fields) < 2 { // nolint gomnd
+	if len(fields) < 2 { // nolint:gomnd
 		return "", false
 	}
 

@@ -6,18 +6,20 @@ import (
 	"strconv"
 )
 
-func (p *sqlParsed) checkFuncInOut(numIn int, f StructField) error {
-	if numIn == 0 && !p.isBindBy(byNone) {
+// nolint:goerr113
+func (p *SQLParsed) checkFuncInOut(numIn int, f StructField) error {
+	if numIn == 0 && !p.isBindBy(ByNone) {
 		return fmt.Errorf("sql %s required bind varialbes, but the func %v has none", p.Stmt, f.Type)
 	}
 
-	if numIn != 1 && p.isBindBy(byName) {
+	if numIn != 1 && p.isBindBy(ByName) {
 		return fmt.Errorf("sql %s required named varialbes, but the func %v has non-one arguments",
 			p.Stmt, f.Type)
 	}
 
-	if p.isBindBy(bySeq, byAuto) {
+	if p.isBindBy(BySeq, ByAuto) {
 		if numIn < p.MaxSeq {
+			// nolint:goerr113
 			return fmt.Errorf("sql %s required max %d vars, but the func %v has only %d arguments",
 				p.Stmt, p.MaxSeq, f.Type, numIn)
 		}
@@ -29,28 +31,33 @@ func (p *sqlParsed) checkFuncInOut(numIn int, f StructField) error {
 type bindBy int
 
 const (
-	byNone bindBy = iota
-	byAuto
-	bySeq
-	byName
+	// ByNone means no bind params.
+	ByNone bindBy = iota
+	// ByAuto means auto seq for bind params.
+	ByAuto
+	// BySeq means specific seq for bind params.
+	BySeq
+	// ByName means named bind params.
+	ByName
 )
 
 func (b bindBy) String() string {
 	switch b {
-	case byNone:
+	case ByNone:
 		return "byNone"
-	case byAuto:
+	case ByAuto:
 		return "byAuto"
-	case bySeq:
+	case BySeq:
 		return "bySeq"
-	case byName:
+	case ByName:
 		return "byName"
 	default:
 		return "Unknown"
 	}
 }
 
-type sqlParsed struct {
+// SQLParsed is the structure of the parsed SQL.
+type SQLParsed struct {
 	ID      string
 	SQL     SQLPart
 	BindBy  bindBy
@@ -62,7 +69,7 @@ type sqlParsed struct {
 	Stmt string
 }
 
-func (p sqlParsed) isBindBy(by ...bindBy) bool {
+func (p SQLParsed) isBindBy(by ...bindBy) bool {
 	for _, b := range by {
 		if p.BindBy == b {
 			return true
@@ -72,10 +79,11 @@ func (p sqlParsed) isBindBy(by ...bindBy) bool {
 	return false
 }
 
-var sqlre = regexp.MustCompile(`'?:\w*'?`) // nolint gochecknoglobals
+var sqlre = regexp.MustCompile(`'?:\w*'?`) // nolint:gochecknoglobals
 
-func parseSQL(sqlName, stmt string) (*sqlParsed, error) {
-	p := &sqlParsed{}
+// ParseSQL parses the sql.
+func ParseSQL(sqlName, stmt string) (*SQLParsed, error) {
+	p := &SQLParsed{}
 
 	if err := p.parseSQL(sqlName, stmt); err != nil {
 		return nil, err
@@ -84,7 +92,7 @@ func parseSQL(sqlName, stmt string) (*sqlParsed, error) {
 	return p, nil
 }
 
-func (p *sqlParsed) parseSQL(sqlName, stmt string) error {
+func (p *SQLParsed) parseSQL(sqlName, stmt string) error {
 	p.Vars = make([]string, 0)
 	p.Stmt = sqlre.ReplaceAllStringFunc(stmt, func(v string) string {
 		if v[0:1] == "'" {
@@ -118,20 +126,21 @@ func (p *sqlParsed) parseSQL(sqlName, stmt string) error {
 }
 
 func parseBindBy(sqlName string, vars []string) (bindBy bindBy, maxSeq int, err error) {
-	bindBy = byNone
+	bindBy = ByNone
 
 	for _, v := range vars {
 		if v == "" {
-			if bindBy == byAuto {
+			if bindBy == ByAuto {
 				maxSeq++
 				continue
 			}
 
-			if bindBy != byNone {
-				return 0, 0, fmt.Errorf("[%s] illegal mixed bind mod (%v-%v)", sqlName, bindBy, byAuto)
+			if bindBy != ByNone {
+				// nolint:goerr113
+				return 0, 0, fmt.Errorf("[%s] illegal mixed bind mod (%v-%v)", sqlName, bindBy, ByAuto)
 			}
 
-			bindBy = byAuto
+			bindBy = ByAuto
 			maxSeq++
 
 			continue
@@ -139,7 +148,7 @@ func parseBindBy(sqlName string, vars []string) (bindBy bindBy, maxSeq int, err 
 
 		n, err := strconv.Atoi(v)
 		if err == nil {
-			if bindBy == bySeq {
+			if bindBy == BySeq {
 				if maxSeq < n {
 					maxSeq = n
 				}
@@ -147,26 +156,28 @@ func parseBindBy(sqlName string, vars []string) (bindBy bindBy, maxSeq int, err 
 				continue
 			}
 
-			if bindBy != byNone {
-				return 0, 0, fmt.Errorf("[%s] illegal mixed bind mod (%v-%v)", sqlName, bindBy, bySeq)
+			if bindBy != ByNone {
+				// nolint:goerr113
+				return 0, 0, fmt.Errorf("[%s] illegal mixed bind mod (%v-%v)", sqlName, bindBy, BySeq)
 			}
 
-			bindBy = bySeq
+			bindBy = BySeq
 			maxSeq = n
 
 			continue
 		}
 
-		if bindBy == byName {
+		if bindBy == ByName {
 			maxSeq++
 			continue
 		}
 
-		if bindBy != byNone {
-			return 0, 0, fmt.Errorf("[%s] illegal mixed bind mod (%v-%v)", sqlName, bindBy, byName)
+		if bindBy != ByNone {
+			// nolint:goerr113
+			return 0, 0, fmt.Errorf("[%s] illegal mixed bind mod (%v-%v)", sqlName, bindBy, ByName)
 		}
 
-		bindBy = byName
+		bindBy = ByName
 		maxSeq++
 	}
 

@@ -2,7 +2,7 @@ package sqlx
 
 import "reflect"
 
-// StructField represents the information of a struct's field
+// StructField represents the information of a struct's field.
 type StructField struct {
 	Parent      *StructValue
 	Field       reflect.Value
@@ -35,7 +35,7 @@ func (f StructField) GetTagOr(tagName string, defaultValue string) string {
 	return defaultValue
 }
 
-// StructValue represents the
+// StructValue represents the structure for a struct.
 type StructValue struct {
 	StructSelf reflect.Value
 	NumField   int
@@ -76,7 +76,7 @@ func (s *StructValue) FieldByName(name string) (StructField, bool) {
 	return s.FieldByIndex(index), true
 }
 
-// FieldByIndex return the StructField at index
+// FieldByIndex return the StructField at index.
 func (s *StructValue) FieldByIndex(index int) StructField {
 	fieldType := s.FieldTypes[index]
 	field := s.StructSelf.Field(index)

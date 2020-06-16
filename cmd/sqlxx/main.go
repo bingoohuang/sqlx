@@ -1,4 +1,4 @@
-// nolint errcheck
+// nolint:errcheck
 package main
 
 import (
@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"unicode"
 
 	"github.com/bingoohuang/gou/str"
 
@@ -22,7 +21,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
-// nolint lll
+// nolint:lll
 type opts struct {
 	DataSource string `short:"d" required:"true" long:"dsn" description:"dsn, eg. root:8BE4@127.0.0.1:9633/test"`
 	Pkg        string `short:"p" required:"false" long:"pkg" description:"package name, default lowercase of database name"`
@@ -46,7 +45,7 @@ type Column struct {
 	Extra      string `name:"EXTRA"`       // eg. auto_increment
 }
 
-// nolint lll
+// nolint:lll
 type mysqlSchemaDao struct {
 	Logger sqlx.DaoLogger
 
@@ -100,30 +99,11 @@ func main() {
 
 	columns := dao.Columns(schema)
 
-	pkg := FixPkgName(str.EmptyThen(opt.Pkg, strings.ToLower(schema)))
+	pkg := sqlx.FixPkgName(str.EmptyThen(opt.Pkg, strings.ToLower(schema)))
 
 	_ = os.MkdirAll(pkg, 0750)
 
 	gen(columns, tablesMap, pkg, opt)
-}
-
-// FixPkgName fixes the package name to all lower case with letters and digits kept.
-func FixPkgName(pkgName string) string {
-	name := ""
-	started := false
-	for _, c := range pkgName {
-		if !started {
-			started = unicode.IsLetter(c)
-		}
-
-		if started {
-			if unicode.IsLetter(c) || unicode.IsDigit(c) {
-				name += string(unicode.ToLower(c))
-			}
-		}
-	}
-
-	return name
 }
 
 func gen(columns []Column, tablesMap map[string]Table, pkg string, opt *opts) {
@@ -194,7 +174,7 @@ func (g *daoGenerator) complete() {
 
 }
 
-// nolint gochecknoglobals
+// nolint:gochecknoglobals
 var (
 	re1 = regexp.MustCompile(`\r?\n`)
 	re2 = regexp.MustCompile(`\s{2,}`)
@@ -228,7 +208,6 @@ func (g *daoGenerator) writeDAOCreator() {
 	w("func " + structName + " () (*" + daoName + ", error) {\n")
 	w("\tdao := &" + daoName + "{Logger: &sqlx.DaoLogrus{}}\n")
 	w("\n")
-	// nolint lll
 	w("\tif err := sqlx.CreateDao(dao, sqlx.WithSQLStr(" + strcase.ToCamelLower(g.table.Name) + "SQL)); err != nil {\n")
 	w("\t\treturn nil, err\n")
 	w("\t}\n")
@@ -511,7 +490,6 @@ func (g *daoGenerator) findAutoIncrement() {
 	}
 }
 
-// nolint gomnd
 func columnGoType(c Column) string {
 	typ := strings.ToLower(c.DataType)
 	switch typ {

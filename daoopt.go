@@ -11,7 +11,7 @@ import (
 	"github.com/bingoohuang/gor/defaults"
 )
 
-// CreateDaoOpt defines the options for CreateDao
+// CreateDaoOpt defines the options for CreateDao.
 type CreateDaoOpt struct {
 	Error        *error
 	Ctx          context.Context

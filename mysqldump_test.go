@@ -1,11 +1,12 @@
-// nolint gomnd
-package sqlx
+package sqlx_test
 
 import (
 	"os"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/bingoohuang/sqlx"
 
 	"bytes"
 	"text/template"
@@ -27,8 +28,8 @@ func TestGetTablesOk(t *testing.T) {
 
 	mock.ExpectQuery("^SHOW TABLES$").WillReturnRows(rows)
 
-	m := &mySQLDump{sdb: db}
-	result, err := m.getTables()
+	m := &sqlx.MySQLDumper{Sdb: db}
+	result, err := m.GetTables()
 
 	if err != nil {
 		t.Errorf("error was not expected while updating stats: %s", err)
@@ -61,8 +62,8 @@ func TestGetTablesNil(t *testing.T) {
 
 	mock.ExpectQuery("^SHOW TABLES$").WillReturnRows(rows)
 
-	m := &mySQLDump{sdb: db}
-	result, err := m.getTables()
+	m := &sqlx.MySQLDumper{Sdb: db}
+	result, err := m.GetTables()
 
 	if err != nil {
 		t.Errorf("error was not expected while updating stats: %s", err)
@@ -88,13 +89,13 @@ func TestGetServerVersionOk(t *testing.T) {
 
 	defer db.Close()
 
-	rows := sqlmock.NewRows([]string{"Version()"}).
+	rows := sqlmock.NewRows([]string{"MySQLDumpVersion()"}).
 		AddRow("test_version")
 
 	mock.ExpectQuery("^SELECT version()").WillReturnRows(rows)
 
-	m := &mySQLDump{sdb: db}
-	result, err := m.getServerVersion()
+	m := &sqlx.MySQLDumper{Sdb: db}
+	result, err := m.GetServerVersion()
 
 	if err != nil {
 		t.Errorf("error was not expected while updating stats: %s", err)
@@ -128,8 +129,8 @@ func TestCreateTableSQLOk(t *testing.T) {
 
 	mock.ExpectQuery("^SHOW CREATE TABLE Test_Table$").WillReturnRows(rows)
 
-	m := &mySQLDump{sdb: db}
-	result, err := m.createTableSQL("Test_Table")
+	m := &sqlx.MySQLDumper{Sdb: db}
+	result, err := m.CreateTableSQL("Test_Table")
 
 	if err != nil {
 		t.Errorf("error was not expected while updating stats: %s", err)
@@ -163,13 +164,13 @@ func TestCreateTableValuesOk(t *testing.T) {
 
 	mock.ExpectQuery("^SELECT (.+) FROM test$").WillReturnRows(rows)
 
-	ds, _ := template.New("mysqldump_tableDataStart").Parse(tableDataTmplStart)
-	de, _ := template.New("mysqldump_tableDataEnd").Parse(tableDataTmplEnd)
+	ds, _ := template.New("mysqldump_tableDataStart").Parse(sqlx.TableDataTmplStart)
+	de, _ := template.New("mysqldump_tableDataEnd").Parse(sqlx.TableDataTmplEnd)
 
 	var b bytes.Buffer
 
-	m := &mySQLDump{sdb: db}
-	err = m.createTableValues(ds, de, &b, "test")
+	m := &sqlx.MySQLDumper{Sdb: db}
+	err = m.CreateTableValues(ds, de, &b, "test")
 
 	if err != nil {
 		t.Errorf("error was not expected while updating stats: %s", err)
@@ -209,13 +210,13 @@ func TestCreateTableValuesNil(t *testing.T) {
 
 	mock.ExpectQuery("^SELECT (.+) FROM test$").WillReturnRows(rows)
 
-	ds, _ := template.New("mysqldump_tableDataStart").Parse(tableDataTmplStart)
-	de, _ := template.New("mysqldump_tableDataEnd").Parse(tableDataTmplEnd)
+	ds, _ := template.New("mysqldump_tableDataStart").Parse(sqlx.TableDataTmplStart)
+	de, _ := template.New("mysqldump_tableDataEnd").Parse(sqlx.TableDataTmplEnd)
 
 	var b bytes.Buffer
 
-	m := &mySQLDump{sdb: db}
-	err = m.createTableValues(ds, de, &b, "test")
+	m := &sqlx.MySQLDumper{Sdb: db}
+	err = m.CreateTableValues(ds, de, &b, "test")
 
 	if err != nil {
 		t.Errorf("error was not expected while updating stats: %s", err)
@@ -242,7 +243,7 @@ func TestCreateTableValuesNil(t *testing.T) {
 	}
 }
 
-// nolint funlen
+// nolint:funlen
 func TestCreateTableOk(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -264,14 +265,14 @@ func TestCreateTableOk(t *testing.T) {
 	mock.ExpectQuery("^SHOW CREATE TABLE Test_Table$").WillReturnRows(createTableRows)
 	mock.ExpectQuery("^SELECT (.+) FROM Test_Table$").WillReturnRows(createTableValueRows)
 
-	ct, _ := template.New("mysqldump_createTable").Parse(createTableTmpl)
-	ds, _ := template.New("mysqldump_tableDataStart").Parse(tableDataTmplStart)
-	de, _ := template.New("mysqldump_tableDataEnd").Parse(tableDataTmplEnd)
+	ct, _ := template.New("mysqldump_createTable").Parse(sqlx.CreateTableTmpl)
+	ds, _ := template.New("mysqldump_tableDataStart").Parse(sqlx.TableDataTmplStart)
+	de, _ := template.New("mysqldump_tableDataEnd").Parse(sqlx.TableDataTmplEnd)
 
 	var b bytes.Buffer
 
-	m := &mySQLDump{sdb: db}
-	err = m.createTable(ct, ds, de, &b, "Test_Table")
+	m := &sqlx.MySQLDumper{Sdb: db}
+	err = m.CreateTable(ct, ds, de, &b, "Test_Table")
 
 	if err != nil {
 		t.Errorf("error was not expected while updating stats: %s", err)
@@ -312,7 +313,7 @@ func TestCreateTableOk(t *testing.T) {
 	}
 }
 
-// nolint funlen
+// nolint:funlen
 func TestDumpOk(t *testing.T) {
 	tmpFile := "/tmp/test_format.sql"
 	os.Remove(tmpFile)
@@ -327,7 +328,7 @@ func TestDumpOk(t *testing.T) {
 	showTablesRows := sqlmock.NewRows([]string{"Tables_in_Testdb"}).
 		AddRow("Test_Table")
 
-	serverVersionRows := sqlmock.NewRows([]string{"Version()"}).
+	serverVersionRows := sqlmock.NewRows([]string{"MySQLDumpVersion()"}).
 		AddRow("test_version")
 
 	createTableRows := sqlmock.NewRows([]string{"Table", "Create Table"}).
@@ -347,7 +348,9 @@ func TestDumpOk(t *testing.T) {
 	mock.ExpectQuery("^SELECT (.+) FROM Test_Table$").WillReturnRows(createTableValueRows)
 
 	var b bytes.Buffer
-	err = MySQLDump(db, &b)
+
+	err = sqlx.MySQLDump(db, &b)
+
 	if err != nil {
 		t.Errorf("error was not expected while dumping the database: %s", err)
 	}
@@ -355,7 +358,7 @@ func TestDumpOk(t *testing.T) {
 	f := b.String()
 	result := strings.Replace(strings.Split(f, "-- Dump completed")[0], "`", "\\", -1)
 
-	expected := `-- Go SQL Dump ` + version + `
+	expected := `-- Go SQL Dump ` + sqlx.MySQLDumpVersion + `
 --
 -- ------------------------------------------------------
 -- Server version	test_version

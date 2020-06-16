@@ -11,7 +11,8 @@ import (
 	"time"
 )
 
-const version = "0.2.2"
+// MySQLDumpVersion defines the version of mysqldump.
+const MySQLDumpVersion = "0.2.2"
 
 const headerTmpl = `-- Go SQL Dump {{ .DumpVersion }}
 --
@@ -29,7 +30,8 @@ const headerTmpl = `-- Go SQL Dump {{ .DumpVersion }}
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 `
 
-const createTableTmpl = `
+// CreateTableTmpl defines the const string for the table template.
+const CreateTableTmpl = `
 --
 -- Table structure for table {{ .Name }}
 --
@@ -39,7 +41,8 @@ DROP TABLE IF EXISTS {{ .Name }};
 {{ .SQL }};
 /*!40101 SET character_set_client = @saved_cs_client */;`
 
-const tableDataTmplStart = `
+// TableDataTmplStart defines the template for the table data starting.
+const TableDataTmplStart = `
 --
 -- Dumping data for table {{ .Name }}
 --
@@ -47,7 +50,9 @@ LOCK TABLES {{ .Name }} WRITE;
 /*!40000 ALTER TABLE {{ .Name }} DISABLE KEYS */;
 
 INSERT INTO {{ .Name }} VALUES `
-const tableDataTmplEnd = `;
+
+// TableDataTmplEnd defines the template for the table data ending.
+const TableDataTmplEnd = `;
 
 /*!40000 ALTER TABLE {{ .Name }} ENABLE KEYS */;
 UNLOCK TABLES;
@@ -55,16 +60,17 @@ UNLOCK TABLES;
 `
 const tailTmpl = `-- Dump completed on {{ .CompleteTime }} `
 
-type mySQLDump struct {
-	sdb *sql.DB
+// MySQLDumper is the structure of dumping.
+type MySQLDumper struct {
+	Sdb *sql.DB
 }
 
 // MySQLDump creates a MYSQL Dump based on the options supplied through the dumper.
 func MySQLDump(db *sql.DB, writer io.Writer) error {
-	m := &mySQLDump{sdb: db}
+	m := &MySQLDumper{Sdb: db}
 
 	// UrlGet server version
-	serverVersion, err := m.getServerVersion()
+	serverVersion, err := m.GetServerVersion()
 	if err != nil {
 		return err
 	}
@@ -75,23 +81,23 @@ func MySQLDump(db *sql.DB, writer io.Writer) error {
 	}
 
 	if err = t.Execute(writer, struct{ DumpVersion, ServerVersion string }{
-		DumpVersion: version, ServerVersion: serverVersion}); err != nil {
+		DumpVersion: MySQLDumpVersion, ServerVersion: serverVersion}); err != nil {
 		return err
 	}
 
 	// UrlGet tables
-	tables, err := m.getTables()
+	tables, err := m.GetTables()
 	if err != nil {
 		return err
 	}
 
-	ct, _ := template.New("mysqldump_createTable").Parse(createTableTmpl)
-	ds, _ := template.New("mysqldump_tableDataStart").Parse(tableDataTmplStart)
-	de, _ := template.New("mysqldump_tableDataEnd").Parse(tableDataTmplEnd)
+	ct, _ := template.New("mysqldump_createTable").Parse(CreateTableTmpl)
+	ds, _ := template.New("mysqldump_tableDataStart").Parse(TableDataTmplStart)
+	de, _ := template.New("mysqldump_tableDataEnd").Parse(TableDataTmplEnd)
 
 	// UrlGet sql for each table
 	for _, name := range tables {
-		if err := m.createTable(ct, ds, de, writer, name); err != nil {
+		if err := m.CreateTable(ct, ds, de, writer, name); err != nil {
 			return err
 		}
 	}
@@ -105,11 +111,12 @@ func MySQLDump(db *sql.DB, writer io.Writer) error {
 	return t.Execute(writer, struct{ CompleteTime string }{CompleteTime: time.Now().String()})
 }
 
-func (m *mySQLDump) getTables() ([]string, error) {
+// GetTables returns tables.
+func (m *MySQLDumper) GetTables() ([]string, error) {
 	tables := make([]string, 0)
 
 	// UrlGet table list
-	rows, err := m.sdb.Query("SHOW TABLES")
+	rows, err := m.Sdb.Query("SHOW TABLES")
 	if err != nil {
 		return tables, err
 	}
@@ -128,17 +135,19 @@ func (m *mySQLDump) getTables() ([]string, error) {
 	return tables, rows.Err()
 }
 
-func (m *mySQLDump) getServerVersion() (string, error) {
+// GetServerVersion get the server version.
+func (m *MySQLDumper) GetServerVersion() (string, error) {
 	var serverVersion sql.NullString
-	if err := m.sdb.QueryRow("SELECT version()").Scan(&serverVersion); err != nil {
+	if err := m.Sdb.QueryRow("SELECT version()").Scan(&serverVersion); err != nil {
 		return "", err
 	}
 
 	return serverVersion.String, nil
 }
 
-func (m *mySQLDump) createTable(ct, ds, de *template.Template, writer io.Writer, name string) error {
-	sql, err := m.createTableSQL(name)
+// CreateTable createa a table.
+func (m *MySQLDumper) CreateTable(ct, ds, de *template.Template, writer io.Writer, name string) error {
+	sql, err := m.CreateTableSQL(name)
 	if err != nil {
 		return err
 	}
@@ -147,31 +156,33 @@ func (m *mySQLDump) createTable(ct, ds, de *template.Template, writer io.Writer,
 		return err
 	}
 
-	return m.createTableValues(ds, de, writer, name)
+	return m.CreateTableValues(ds, de, writer, name)
 }
 
-func (m *mySQLDump) createTableSQL(name string) (string, error) {
+// CreateTableSQL creates a SQL statement to create a table.
+func (m *MySQLDumper) CreateTableSQL(name string) (string, error) {
 	var tableReturn sql.NullString
 
 	var tableSQL sql.NullString
 
-	err := m.sdb.QueryRow("SHOW CREATE TABLE "+name).Scan(&tableReturn, &tableSQL)
+	err := m.Sdb.QueryRow("SHOW CREATE TABLE "+name).Scan(&tableReturn, &tableSQL)
 
 	if err != nil {
 		return "", err
 	}
 
 	if tableReturn.String != name {
-		return "", errors.New("returned table is not the same as requested table")
+		return "", errors.New("returned table is not the same as requested table") // nolint:goerr113
 	}
 
 	return tableSQL.String, nil
 }
 
-// nolint funlen
-func (m *mySQLDump) createTableValues(ds, de *template.Template, writer io.Writer, name string) error {
+// CreateTableValues ...
+// nolint:funlen
+func (m *MySQLDumper) CreateTableValues(ds, de *template.Template, writer io.Writer, name string) error {
 	// #nosec G202
-	rows, err := m.sdb.Query("SELECT * FROM " + name)
+	rows, err := m.Sdb.Query("SELECT * FROM " + name)
 	if err != nil {
 		return err
 	}
@@ -185,7 +196,7 @@ func (m *mySQLDump) createTableValues(ds, de *template.Template, writer io.Write
 	}
 
 	if len(columns) == 0 {
-		return errors.New("no columns in table " + name + ".")
+		return errors.New("no columns in table " + name + ".") // nolint:goerr113
 	}
 
 	rowsIndex := 0

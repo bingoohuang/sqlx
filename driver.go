@@ -7,7 +7,7 @@ import (
 	"sync"
 )
 
-// nolint gochecknoglobals
+// nolint:gochecknoglobals
 var (
 	sqlDriverNamesByType     = map[reflect.Type]string{}
 	sqlDriverNamesByTypeOnce sync.Once

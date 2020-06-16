@@ -30,17 +30,17 @@ func MakeDB(db *sql.DB) *StdDB { return &StdDB{db: db} }
 // GetDB returns a sql.DBGetter.
 func (f StdDB) GetDB() *sql.DB { return f.db }
 
-// nolint gochecknoglobals
+// nolint:gochecknoglobals
 var (
 	// DB is the global sql.DB for convenience.
 	DB *sql.DB
 )
 
-// CreateDao fulfils the dao (should be pointer)
+// CreateDao fulfils the dao (should be pointer).
 func CreateDao(dao interface{}, createDaoOpts ...CreateDaoOpter) error {
 	daov := reflect.ValueOf(dao)
 	if daov.Kind() != reflect.Ptr || daov.Elem().Kind() != reflect.Struct {
-		return fmt.Errorf("dao should be pointer to struct")
+		return fmt.Errorf("dao should be pointer to struct") // nolint:goerr113
 	}
 
 	option, err := applyCreateDaoOption(createDaoOpts)
@@ -68,15 +68,15 @@ func CreateDao(dao interface{}, createDaoOpts ...CreateDaoOpter) error {
 
 		sqlStmt, sqlName := option.getSQLStmt(f, tags, 0)
 		if sqlStmt == nil {
-			return fmt.Errorf("failed to find sqlName %s", f.Name)
+			return fmt.Errorf("failed to find sqlName %s", f.Name) // nolint:goerr113
 		}
 
-		parsed, err := parseSQL(sqlName, sqlStmt.Raw())
+		parsed, err := ParseSQL(sqlName, sqlStmt.Raw())
 		if err != nil {
 			return err
 		}
 
-		p := &sqlParsed{
+		p := &SQLParsed{
 			ID:  sqlName,
 			SQL: sqlStmt,
 		}
@@ -86,7 +86,7 @@ func CreateDao(dao interface{}, createDaoOpts ...CreateDaoOpter) error {
 		p.BindBy = parsed.BindBy
 		p.IsQuery = parsed.IsQuery
 
-		r := sqlRun{sqlParsed: p}
+		r := sqlRun{SQLParsed: p}
 
 		if err := r.createFn(f); err != nil {
 			return err
@@ -107,7 +107,7 @@ func MapValueOrDefault(m map[string]string, key, defaultValue string) string {
 }
 
 func (option *CreateDaoOpt) getSQLStmt(field StructField, tags Tags, stack int) (SQLPart, string) {
-	if stack > 10 { // nolint gomnd
+	if stack > 10 { // nolint:gomnd
 		return nil, ""
 	}
 
@@ -138,7 +138,7 @@ func (option *CreateDaoOpt) getSQLStmt(field StructField, tags Tags, stack int) 
 	}
 
 	if field, ok := field.Parent.FieldByName(sqlName); ok {
-		return option.getSQLStmt(field, nil, stack+1) // nolint gomnd
+		return option.getSQLStmt(field, nil, stack+1)
 	}
 
 	return nil, sqlName
@@ -148,14 +148,14 @@ func (r *sqlRun) createFn(f StructField) error {
 	numIn := f.Type.NumIn()
 	numOut := f.Type.NumOut()
 
-	lastOutError := numOut > 0 && gor.IsError(f.Type.Out(numOut-1)) // nolint gomnd
+	lastOutError := numOut > 0 && gor.IsError(f.Type.Out(numOut-1))
 	if lastOutError {
 		numOut--
 	}
 
 	fn := r.MakeFunc(f, numIn, numOut)
 	if fn == nil {
-		err := fmt.Errorf("unsupportd func %s %v", f.Name, f.Type)
+		err := fmt.Errorf("unsupportd func %s %v", f.Name, f.Type) // nolint:goerr113
 		r.logError(err)
 
 		return err
@@ -168,7 +168,7 @@ func (r *sqlRun) createFn(f StructField) error {
 			r.opt.ErrSetter(err)
 			r.logError(err)
 
-			values = make([]reflect.Value, numOut, numOut+1) // nolint gomnd
+			values = make([]reflect.Value, numOut, numOut+1)
 			for i := 0; i < numOut; i++ {
 				values[i] = reflect.Zero(f.Type.Out(i))
 			}
@@ -191,7 +191,7 @@ func (r *sqlRun) createFn(f StructField) error {
 func (r *sqlRun) MakeFunc(f StructField, numIn int, numOut int) func([]reflect.Value) ([]reflect.Value, error) {
 	var fn func(int, StructField, []reflect.Type, []reflect.Value) ([]reflect.Value, error)
 
-	switch isBindByName := r.isBindBy(byName); {
+	switch isBindByName := r.isBindBy(ByName); {
 	case !r.IsQuery && isBindByName:
 		fn = r.execByName
 	case !r.IsQuery && !isBindByName:
@@ -218,13 +218,13 @@ func makeOutTypes(outType reflect.Type, numOut int) []reflect.Type {
 }
 
 type sqlRun struct {
-	*sqlParsed
+	*SQLParsed
 }
 
 func (r *sqlRun) evalSeq(numIn int, f StructField, args []reflect.Value) (string, error) {
 	env := make(map[string]interface{})
 	for i, arg := range args {
-		env[fmt.Sprintf("_%d", i+1)] = arg.Interface() // nolint gomnd
+		env[fmt.Sprintf("_%d", i+1)] = arg.Interface()
 	}
 
 	return r.eval(numIn, f, env)
@@ -262,7 +262,7 @@ func (r *sqlRun) queryByName(numIn int, f StructField,
 		return nil, err
 	}
 
-	parsed, err := parseSQL(r.ID, runSQL)
+	parsed, err := ParseSQL(r.ID, runSQL)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +274,7 @@ func (r *sqlRun) queryByName(numIn int, f StructField,
 		return nil, err
 	}
 
-	rows, err := r.doQueryDirectVars(vars) // nolint rowserrcheck
+	rows, err := r.doQueryDirectVars(vars)
 	if err != nil {
 		return nil, err
 	}
@@ -284,7 +284,7 @@ func (r *sqlRun) queryByName(numIn int, f StructField,
 	return r.processQueryRows(rows, outTypes)
 }
 
-// nolint funlen
+// nolint:funlen
 func (r *sqlRun) execByName(numIn int, f StructField, outTypes []reflect.Type,
 	args []reflect.Value) ([]reflect.Value, error) {
 	var bean reflect.Value
@@ -334,7 +334,7 @@ func (r *sqlRun) execByName(numIn int, f StructField, outTypes []reflect.Type,
 		if lastSQL != runSQL {
 			lastSQL = runSQL
 
-			parsed, err := parseSQL(r.ID, runSQL)
+			parsed, err := ParseSQL(r.ID, runSQL)
 			if err != nil {
 				return nil, err
 			}
@@ -367,7 +367,7 @@ func (r *sqlRun) execByName(numIn int, f StructField, outTypes []reflect.Type,
 	return convertExecResult(lastResult, lastSQL, outTypes)
 }
 
-func (p *sqlParsed) createNamedMap(bean reflect.Value) map[string]interface{} {
+func (p *SQLParsed) createNamedMap(bean reflect.Value) map[string]interface{} {
 	m := make(map[string]interface{})
 
 	if !bean.IsValid() {
@@ -396,7 +396,7 @@ func (p *sqlParsed) createNamedMap(bean reflect.Value) map[string]interface{} {
 	return m
 }
 
-func (p *sqlParsed) createNamedVars(bean reflect.Value) ([]interface{}, error) {
+func (p *SQLParsed) createNamedVars(bean reflect.Value) ([]interface{}, error) {
 	itemType := bean.Type()
 
 	var namedValueParser func(name string, item reflect.Value, itemType reflect.Type) interface{}
@@ -415,6 +415,7 @@ func (p *sqlParsed) createNamedVars(bean reflect.Value) ([]interface{}, error) {
 	}
 
 	if namedValueParser == nil {
+		// nolint:goerr113
 		return nil, fmt.Errorf("named vars should use struct/map, unsupported type %v", itemType)
 	}
 
@@ -427,7 +428,7 @@ func (p *sqlParsed) createNamedVars(bean reflect.Value) ([]interface{}, error) {
 	return vars, nil
 }
 
-func (p *sqlParsed) logPrepare(runSQL string, vars interface{}) {
+func (p *SQLParsed) logPrepare(runSQL string, vars interface{}) {
 	p.opt.Logger.LogStart(p.ID, runSQL, vars)
 }
 
@@ -463,14 +464,14 @@ func (r *sqlRun) queryBySeq(numIn int, f StructField,
 		return nil, err
 	}
 
-	parsed, err := parseSQL(r.ID, runSQL)
+	parsed, err := ParseSQL(r.ID, runSQL)
 	if err != nil {
 		return nil, err
 	}
 
 	r.resetSQLParsed(parsed)
 
-	rows, err := r.doQuery(args) // nolint rowserrcheck
+	rows, err := r.doQuery(args)
 	if err != nil {
 		return nil, err
 	}
@@ -561,7 +562,7 @@ func (r *sqlRun) noRows(out0Type reflect.Type, out0TypePtr bool, outTypes []refl
 	return outValues, sql.ErrNoRows
 }
 
-func (p *sqlParsed) getRowScanInterceptorFn() RowScanInterceptorFn {
+func (p *SQLParsed) getRowScanInterceptorFn() RowScanInterceptorFn {
 	if p.opt.RowScanInterceptor != nil {
 		return p.opt.RowScanInterceptor.After
 	}
@@ -592,7 +593,7 @@ func (r *sqlRun) doQueryDirectVars(vars []interface{}) (*sql.Rows, error) {
 	return rows, nil
 }
 
-func (r *sqlRun) resetSQLParsed(p *sqlParsed) {
+func (r *sqlRun) resetSQLParsed(p *SQLParsed) {
 	r.Stmt = p.Stmt
 	r.IsQuery = p.IsQuery
 	r.Vars = p.Vars
@@ -600,11 +601,12 @@ func (r *sqlRun) resetSQLParsed(p *sqlParsed) {
 	r.BindBy = p.BindBy
 }
 
-func (p *sqlParsed) createMapFields(columns []string, out0Type reflect.Type,
+func (p *SQLParsed) createMapFields(columns []string, out0Type reflect.Type,
 	outTypes []reflect.Type) ([]selectItem, error) {
 	switch out0Type.Kind() {
 	case reflect.Struct, reflect.Map:
-		if len(outTypes) != 1 { // nolint gomnd
+		if len(outTypes) != 1 {
+			// nolint:goerr113
 			return nil, fmt.Errorf("unsupported return type  %v for current sql %v", out0Type, p.SQL)
 		}
 	}
@@ -658,11 +660,11 @@ func max(a, b int) int {
 	return b
 }
 
-func (p *sqlParsed) makeMapField(col string, outType reflect.Type) selectItem {
+func (p *SQLParsed) makeMapField(col string, outType reflect.Type) selectItem {
 	return &mapItem{k: reflect.ValueOf(col), vType: outType.Elem()}
 }
 
-func (p *sqlParsed) makeStructField(col string, outType reflect.Type) selectItem {
+func (p *SQLParsed) makeStructField(col string, outType reflect.Type) selectItem {
 	fv, ok := outType.FieldByNameFunc(func(field string) bool {
 		return matchesField2Col(outType, field, col)
 	})
@@ -674,11 +676,11 @@ func (p *sqlParsed) makeStructField(col string, outType reflect.Type) selectItem
 	return nil
 }
 
-func (p *sqlParsed) makeVars(args []reflect.Value) []interface{} {
+func (p *SQLParsed) makeVars(args []reflect.Value) []interface{} {
 	vars := make([]interface{}, 0, len(p.Vars))
 
 	for i, name := range p.Vars {
-		if p.BindBy == byAuto {
+		if p.BindBy == ByAuto {
 			vars = append(vars, args[i].Interface())
 		} else {
 			seq, _ := strconv.Atoi(name)
@@ -689,7 +691,7 @@ func (p *sqlParsed) makeVars(args []reflect.Value) []interface{} {
 	return vars
 }
 
-func (p *sqlParsed) logError(err error) { p.opt.Logger.LogError(err) }
+func (p *SQLParsed) logError(err error) { p.opt.Logger.LogError(err) }
 
 func convertExecResult(result sql.Result, stmt string, outTypes []reflect.Type) ([]reflect.Value, error) {
 	if len(outTypes) == 0 {
@@ -709,8 +711,8 @@ func convertExecResult(result sql.Result, stmt string, outTypes []reflect.Type) 
 	firstWord := strings.ToUpper(FirstWord(stmt))
 	results := make([]reflect.Value, 0)
 
-	if len(outTypes) == 1 { // nolint gomnd
-		if firstWord == "INSERT" { // nolint goconst
+	if len(outTypes) == 1 {
+		if firstWord == "INSERT" { // nolint:goconst
 			return append(results, reflect.ValueOf(lastInsertIDVal).Convert(outTypes[0])), nil
 		}
 

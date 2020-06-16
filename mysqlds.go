@@ -112,7 +112,7 @@ func parseProps(fields []string) map[string]string {
 }
 
 func parseHostPort(addr, defaultPort string) (string, string) {
-	pos := strings.Index(addr, ":")
+	pos := strings.LastIndex(addr, ":")
 	if pos < 0 {
 		return addr, defaultPort
 	}

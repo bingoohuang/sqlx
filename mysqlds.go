@@ -2,6 +2,7 @@ package sqlx
 
 import (
 	"fmt"
+	"net"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -65,8 +66,18 @@ func compatibleDBURL(s string) (string, bool) {
 
 	host, port := parseHostPort(right, "3306")
 
+	if IsIPv6(host) {
+		host = "[" + host + "]"
+	}
+
 	return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=true&loc=Local",
 		user, password, host, port, db), true
+}
+
+// IsIPv6 tests if the str is an IPv6 format.
+func IsIPv6(str string) bool {
+	ip := net.ParseIP(str)
+	return ip != nil && strings.Contains(str, ":")
 }
 
 func compatibleGoSSHHost(s string) (string, bool) {

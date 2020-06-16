@@ -96,6 +96,10 @@ func compatibleGoSSHHost(s string) (string, bool) {
 		db = v
 	}
 
+	if IsIPv6(host) {
+		host = "[" + host + "]"
+	}
+
 	return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=true&loc=Local",
 		user, password, host, port, db), true
 }
@@ -159,6 +163,10 @@ func compatibleMySQLClientCmd(s string) string {
 
 	if password == "" {
 		password, _ = pf.GetString("MYSQL_PWD")
+	}
+
+	if IsIPv6(host) {
+		host = "[" + host + "]"
 	}
 
 	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=true&loc=Local",

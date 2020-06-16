@@ -2,7 +2,6 @@ package sqlx
 
 import (
 	"database/sql"
-	"sync"
 	"time"
 
 	"github.com/jinzhu/gorm"
@@ -44,6 +43,10 @@ func NewSQLMore(dbDriver, dbURI string) *SQLMore {
 		}
 	}
 
+	if err := ViperMySQLBindAddress(); err != nil {
+		panic(err)
+	}
+
 	return sqlMore
 }
 
@@ -56,17 +59,8 @@ func (s *SQLMore) Open() *sql.DB {
 	}
 }
 
-// nolint:gochecknoglobals
-var bindAddressOnce sync.Once
-
 // OpenE 打开新的数据库连接池对象.
 func (s *SQLMore) OpenE() (*sql.DB, error) {
-	bindAddressOnce.Do(func() {
-		if err := ViperMySQLBindAddress(); err != nil {
-			panic(err)
-		}
-	})
-
 	db, err := sql.Open(s.Driver, s.EnhancedURI)
 	if err != nil {
 		return nil, err
@@ -77,12 +71,6 @@ func (s *SQLMore) OpenE() (*sql.DB, error) {
 
 // GormOpen 确保打开新的Gorm数据库连接池对象.
 func (s *SQLMore) GormOpen() *gorm.DB {
-	bindAddressOnce.Do(func() {
-		if err := ViperMySQLBindAddress(); err != nil {
-			panic(err)
-		}
-	})
-
 	if db, err := s.GormOpenE(); err != nil {
 		panic(err)
 	} else {

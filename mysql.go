@@ -62,18 +62,22 @@ func (m *MySQLMore) EnhanceGormDB(db *gorm.DB) *gorm.DB {
 // ViperMySQLBindAddress bind client address by viper flag bindAddress.
 func ViperMySQLBindAddress() error {
 	bindAddress := viper.GetString("bindAddress")
-
 	if bindAddress == "" {
 		return nil
 	}
 
-	return MySQLBindAddress(bindAddress, &net.Dialer{
+	const netKey = "mysqlNet"
+
+	viper.SetDefault(netKey, "tcp")
+	mysqlNet := viper.GetString(netKey)
+
+	return MySQLBindAddress(mysqlNet, bindAddress, &net.Dialer{
 		Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, // nolint:gomnd
 	})
 }
 
 // MySQLBindAddress bind client address.
-func MySQLBindAddress(bindAddress string, defaultDialer *net.Dialer) error {
+func MySQLBindAddress(mysqlNet, bindAddress string, defaultDialer *net.Dialer) error {
 	// https://stackoverflow.com/questions/33768557/how-to-bind-an-http-client-in-go-to-an-ip-address
 	ip, err := ResolveIP(bindAddress)
 	if err != nil {
@@ -93,7 +97,7 @@ func MySQLBindAddress(bindAddress string, defaultDialer *net.Dialer) error {
 
 	// https://gist.github.com/jayjanssen/8e74bc4c5bdefc880ffd
 	f := func(addr string) (net.Conn, error) { return nd.Dial(`tcp`, addr) }
-	mysql.RegisterDial(`tcp`, f)
+	mysql.RegisterDial(mysqlNet, f)
 
 	return nil
 }

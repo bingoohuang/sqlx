@@ -1,12 +1,24 @@
 package sqlx_test
 
 import (
+	"fmt"
+	"reflect"
 	"testing"
+	"time"
 
 	"github.com/bingoohuang/sqlx"
-
 	"github.com/stretchr/testify/assert"
 )
+
+func TestPtr(t *testing.T) {
+	n := time.Now()
+	r := reflect.ValueOf(n)
+
+	p := reflect.New(r.Type())
+	p.Elem().Set(r)
+
+	fmt.Println(p)
+}
 
 func TestSplitSql(t *testing.T) {
 	assert := assert.New(t)

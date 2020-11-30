@@ -4,9 +4,8 @@ import (
 	"database/sql"
 	"reflect"
 
-	"github.com/sirupsen/logrus"
-
 	"github.com/bingoohuang/gor"
+	"github.com/sirupsen/logrus"
 )
 
 // DaoLogger is the interface for dao logging.

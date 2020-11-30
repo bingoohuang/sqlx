@@ -10,10 +10,9 @@ import (
 	"strings"
 	"unicode"
 
-	funk "github.com/thoas/go-funk"
-
 	"github.com/antonmedv/expr"
 	"github.com/antonmedv/expr/vm"
+	funk "github.com/thoas/go-funk"
 )
 
 // DotSQLItem tells the SQL details.
@@ -23,7 +22,7 @@ type DotSQLItem struct {
 	Attrs   map[string]string
 }
 
-var re = regexp.MustCompile(`\s*(\w+)\s*(:\s*(\S+))?`) // nolint
+var re = regexp.MustCompile(`\s*(\w+)\s*(:\s*(\S+))?`)
 
 // ParseDotTag parses the tag like name:value age:34 adult to map
 // returns the map and main tag's value.

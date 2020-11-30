@@ -49,6 +49,8 @@ func processQuery(db SQLExec, sqlStr string, firstKey string, maxRows int, nullR
 		return ExecResult{Error: err, CostTime: time.Since(start), IsQuerySQL: true, FirstKey: firstKey}
 	}
 
+	defer rows.Close()
+
 	columns, err := rows.Columns()
 	if err != nil {
 		return ExecResult{Error: err, CostTime: time.Since(start), IsQuerySQL: true, FirstKey: firstKey}

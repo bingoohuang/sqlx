@@ -5,10 +5,9 @@ import (
 	"net"
 	"strings"
 
-	"github.com/sirupsen/logrus"
-
 	"github.com/bingoohuang/gou/str"
 	"github.com/bingoohuang/shellwords"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
 )
 

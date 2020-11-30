@@ -79,7 +79,7 @@ func (p SQLParsed) isBindBy(by ...bindBy) bool {
 	return false
 }
 
-var sqlre = regexp.MustCompile(`'?:\w*'?`) // nolint:gochecknoglobals
+var sqlre = regexp.MustCompile(`'?:\w*'?`)
 
 // ParseSQL parses the sql.
 func ParseSQL(sqlName, stmt string) (*SQLParsed, error) {

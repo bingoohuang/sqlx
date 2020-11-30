@@ -1,17 +1,15 @@
 package sqlx_test
 
 import (
+	"bytes"
 	"os"
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/bingoohuang/sqlx"
-
-	"bytes"
 	"text/template"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/bingoohuang/sqlx"
 )
 
 func TestGetTablesOk(t *testing.T) {

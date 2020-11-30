@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/bingoohuang/gor"
-
 	"github.com/bingoohuang/strcase"
 )
 
@@ -611,16 +610,17 @@ func (p *SQLParsed) createMapFields(columns []string, out0Type reflect.Type,
 		}
 	}
 
+	lenCol := len(columns)
 	switch out0Type.Kind() {
 	case reflect.Struct:
-		mapFields := make([]selectItem, len(columns))
+		mapFields := make([]selectItem, lenCol)
 		for i, col := range columns {
 			mapFields[i] = p.makeStructField(col, out0Type)
 		}
 
 		return mapFields, nil
 	case reflect.Map:
-		mapFields := make([]selectItem, len(columns))
+		mapFields := make([]selectItem, lenCol)
 		for i, col := range columns {
 			mapFields[i] = p.makeMapField(col, out0Type)
 		}
@@ -628,13 +628,16 @@ func (p *SQLParsed) createMapFields(columns []string, out0Type reflect.Type,
 		return mapFields, nil
 	}
 
-	mapFields := make([]selectItem, max(len(columns), len(outTypes)))
+	mapFields := make([]selectItem, max(lenCol, len(outTypes)))
 
 	for i := range columns {
 		if i < len(outTypes) {
-			vType := outTypes[i]
-			ptr := vType.Kind() == reflect.Ptr
+			vType := out0Type
+			if i > 0 {
+				vType = outTypes[i]
+			}
 
+			ptr := vType.Kind() == reflect.Ptr
 			if ptr {
 				vType = vType.Elem()
 			}
@@ -645,7 +648,7 @@ func (p *SQLParsed) createMapFields(columns []string, out0Type reflect.Type,
 		}
 	}
 
-	for i := len(columns); i < len(outTypes); i++ {
+	for i := lenCol; i < len(outTypes); i++ {
 		mapFields[i] = &singleValue{vType: outTypes[i]}
 	}
 
@@ -815,16 +818,20 @@ func resetDests(out0Type reflect.Type, out0TypePtr bool,
 
 	var out0 reflect.Value
 
-	hasParent := false
 	out := make([]reflect.Value, len(outTypes))
 
-	switch out0Type.Kind() {
-	case reflect.Map:
+	out0Kind := out0Type.Kind()
+	hasParent := false
+	switch out0Kind {
+	case reflect.Map, reflect.Struct:
 		hasParent = true
+	}
+
+	switch out0Kind {
+	case reflect.Map:
 		out0 = reflect.MakeMap(reflect.MapOf(out0Type.Key(), out0Type.Elem()))
 		out[0] = out0
-	case reflect.Struct:
-		hasParent = true
+	default:
 		out0Ptr := reflect.New(out0Type)
 		out0 = reflect.Indirect(out0Ptr)
 
@@ -843,6 +850,8 @@ func resetDests(out0Type reflect.Type, out0TypePtr bool,
 
 		if hasParent {
 			fv.ResetParent(out0)
+		} else if i == 0 {
+			fv.ResetParent(out[0])
 		} else if i < len(outTypes) {
 			out[i] = reflect.Indirect(reflect.New(outTypes[i]))
 			fv.ResetParent(out[i])

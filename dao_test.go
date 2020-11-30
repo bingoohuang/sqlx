@@ -8,9 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sirupsen/logrus"
-
 	"github.com/bingoohuang/sqlx"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -406,6 +405,7 @@ type personDaoDynamic struct {
 
 	GetAddrStruct  func(p personMap) (addr string)
 	GetAddrStruct2 func(p personMap) (addr string)
+	GetAddrStruct3 func(p personMap) (addresses []string) `sqlName:"GetAddrStruct2"`
 
 	Logger sqlx.DaoLogger
 	Error  error
@@ -435,6 +435,9 @@ func TestMapDynamic(t *testing.T) {
 
 	that.Equal("bjca", dao.GetAddrStruct2(personMap{ID: "40685"}))
 	that.Equal("acjb", dao.GetAddrStruct2(personMap{ID: "40685", Age: 600}))
+
+	that.Equal([]string{"bjca", "acjb"}, dao.GetAddrStruct3(personMap{ID: "40685"}))
+	that.Equal([]string{"acjb"}, dao.GetAddrStruct3(personMap{ID: "40685", Age: 600}))
 }
 
 const dotSQLLastInsertID = `

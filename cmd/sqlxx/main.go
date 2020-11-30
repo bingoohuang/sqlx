@@ -12,13 +12,11 @@ import (
 	"strings"
 
 	"github.com/bingoohuang/gou/str"
-
 	"github.com/bingoohuang/sqlx"
 	"github.com/bingoohuang/strcase"
+	_ "github.com/go-sql-driver/mysql"
 	flags "github.com/jessevdk/go-flags"
 	"github.com/sirupsen/logrus"
-
-	_ "github.com/go-sql-driver/mysql"
 )
 
 // nolint:lll
@@ -174,7 +172,6 @@ func (g *daoGenerator) complete() {
 
 }
 
-// nolint:gochecknoglobals
 var (
 	re1 = regexp.MustCompile(`\r?\n`)
 	re2 = regexp.MustCompile(`\s{2,}`)

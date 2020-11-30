@@ -7,7 +7,6 @@ import (
 	"reflect"
 
 	"github.com/bingoohuang/gor"
-
 	"github.com/bingoohuang/gor/defaults"
 )
 

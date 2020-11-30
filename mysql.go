@@ -7,9 +7,8 @@ import (
 
 	"github.com/bingoohuang/gonet"
 	"github.com/go-sql-driver/mysql"
-	"github.com/spf13/viper"
-
 	"github.com/jinzhu/gorm"
+	"github.com/spf13/viper"
 )
 
 // MySQLMore MySQL增强器.

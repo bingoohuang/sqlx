@@ -66,7 +66,7 @@ type MySQLDumper struct {
 }
 
 // MySQLDump creates a MYSQL Dump based on the options supplied through the dumper.
-func MySQLDump(db *sql.DB, writer io.Writer) error {
+func MySQLDump(db *sql.DB, writer io.Writer, specifiesTables ...string) error {
 	m := &MySQLDumper{Sdb: db}
 
 	// UrlGet server version
@@ -95,8 +95,17 @@ func MySQLDump(db *sql.DB, writer io.Writer) error {
 	ds, _ := template.New("mysqldump_tableDataStart").Parse(TableDataTmplStart)
 	de, _ := template.New("mysqldump_tableDataEnd").Parse(TableDataTmplEnd)
 
+	specifiesTablesMap := make(map[string]bool)
+	for _, specifiesTable := range specifiesTables {
+		specifiesTablesMap[strings.ToLower(specifiesTable)] = true
+	}
+
 	// UrlGet sql for each table
 	for _, name := range tables {
+		if !specifiesTablesMap[strings.ToLower(name)] {
+			continue
+		}
+
 		if err := m.CreateTable(ct, ds, de, writer, name); err != nil {
 			return err
 		}

@@ -102,7 +102,7 @@ func MySQLDump(db *sql.DB, writer io.Writer, specifiesTables ...string) error {
 
 	// UrlGet sql for each table
 	for _, name := range tables {
-		if !specifiesTablesMap[strings.ToLower(name)] {
+		if len(specifiesTablesMap) > 0 && !specifiesTablesMap[strings.ToLower(name)] {
 			continue
 		}
 

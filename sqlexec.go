@@ -26,18 +26,28 @@ type SQLExec interface {
 	Query(query string, args ...interface{}) (*sql.Rows, error)
 }
 
+type ExecOption struct {
+	MaxRows     int
+	NullReplace string
+	BlobReplace string
+}
+
+func (o ExecOption) reachMaxRows(row int) bool {
+	return o.MaxRows > 0 && row >= o.MaxRows
+}
+
 // ExecSQL executes a SQL.
-func ExecSQL(db SQLExec, sqlStr string, maxRows int, nullReplace string) ExecResult {
+func ExecSQL(db SQLExec, sqlStr string, option ExecOption) ExecResult {
 	firstKey, isQuerySQL := IsQuerySQL(sqlStr)
 
 	if isQuerySQL {
-		return processQuery(db, sqlStr, firstKey, maxRows, nullReplace)
+		return processQuery(db, sqlStr, firstKey, option)
 	}
 
 	return execNonQuery(db, sqlStr, firstKey)
 }
 
-func processQuery(db SQLExec, sqlStr string, firstKey string, maxRows int, nullReplace string) ExecResult {
+func processQuery(db SQLExec, sqlStr string, firstKey string, option ExecOption) ExecResult {
 	start := time.Now()
 
 	rows, err := db.Query(sqlStr)
@@ -58,14 +68,17 @@ func processQuery(db SQLExec, sqlStr string, firstKey string, maxRows int, nullR
 
 	columnSize := len(columns)
 	columnTypes, _ := rows.ColumnTypes()
-	columnLobs := make([]bool, columnSize)
 	data := make([][]string, 0)
 
-	for i := 0; i < len(columnTypes); i++ {
-		columnLobs[i] = ContainsIgnoreCase(columnTypes[i].DatabaseTypeName(), "LOB")
+	var columnLobs []bool
+	if option.BlobReplace != "" {
+		columnLobs = make([]bool, columnSize)
+		for i := 0; i < len(columnTypes); i++ {
+			columnLobs[i] = ContainsFold(columnTypes[i].DatabaseTypeName(), "LOB")
+		}
 	}
 
-	for row := 0; rows.Next() && (maxRows == 0 || row < maxRows); row++ {
+	for row := 0; rows.Next() && !option.reachMaxRows(row); row++ {
 		holders := make([]sql.NullString, columnSize)
 		pointers := make([]interface{}, columnSize)
 
@@ -80,9 +93,9 @@ func processQuery(db SQLExec, sqlStr string, firstKey string, maxRows int, nullR
 		values := make([]string, columnSize)
 
 		for i, v := range holders {
-			values[i] = IfElse(v.Valid, v.String, nullReplace)
+			values[i] = IfElse(v.Valid, v.String, option.NullReplace)
 
-			if columnLobs[i] && v.Valid {
+			if option.BlobReplace != "" && v.Valid && columnLobs[i] {
 				values[i] = "(" + columnTypes[i].DatabaseTypeName() + ")"
 			}
 		}
@@ -123,11 +136,9 @@ func IsQuerySQL(sql string) (string, bool) {
 	key := FirstWord(sql)
 
 	switch strings.ToUpper(key) {
-	case "INSERT", "DELETE", "UPDATE", "SET", "REPLACE":
-		return key, false
 	case "SELECT", "SHOW", "DESC", "DESCRIBE", "EXPLAIN":
 		return key, true
-	default:
+	default: // "INSERT", "DELETE", "UPDATE", "SET", "REPLACE":
 		return key, false
 	}
 }
@@ -150,7 +161,7 @@ func IfElse(ifCondition bool, ifValue, elseValue string) string {
 	return elseValue
 }
 
-// ContainsIgnoreCase tell if a contains b in case-insensitively.
-func ContainsIgnoreCase(a, b string) bool {
+// ContainsFold tell if a contains b in case-insensitively.
+func ContainsFold(a, b string) bool {
 	return strings.Contains(strings.ToUpper(a), strings.ToUpper(b))
 }

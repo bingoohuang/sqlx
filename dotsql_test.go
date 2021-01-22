@@ -125,39 +125,39 @@ INSERT INTO users (?, ?, ?)
 }
 
 func TestParseSQL(t *testing.T) {
-	parsed, err := sqlx.ParseSQL("auto", "insert into person(name, age) values(:name, :age)")
+	parsed, err := sqlx.ParseSQL("", "insert into person(name, age) values(:name, :age)")
 	assert.Nil(t, err)
 	assert.Equal(t, &sqlx.SQLParsed{
-		Stmt:   "insert into person(name, age) values(?, ?)",
-		BindBy: sqlx.ByName,
-		Vars:   []string{"name", "age"},
-		MaxSeq: 2,
+		RawStmt: "insert into person(name, age) values(?, ?)",
+		BindBy:  sqlx.ByName,
+		Vars:    []string{"name", "age"},
+		MaxSeq:  2,
 	}, parsed)
 
-	parsed, err = sqlx.ParseSQL("auto", "insert into person(name, age) values(:1, :2)")
+	parsed, err = sqlx.ParseSQL("", "insert into person(name, age) values(:1, :2)")
 	assert.Nil(t, err)
 	assert.Equal(t, &sqlx.SQLParsed{
-		Stmt:   "insert into person(name, age) values(?, ?)",
-		BindBy: sqlx.BySeq,
-		Vars:   []string{"1", "2"},
-		MaxSeq: 2,
+		RawStmt: "insert into person(name, age) values(?, ?)",
+		BindBy:  sqlx.BySeq,
+		Vars:    []string{"1", "2"},
+		MaxSeq:  2,
 	}, parsed)
 
-	parsed, err = sqlx.ParseSQL("auto", "insert into person(name, age) values(:, :)")
+	parsed, err = sqlx.ParseSQL("", "insert into person(name, age) values(:, :)")
 	assert.Nil(t, err)
 	assert.Equal(t, &sqlx.SQLParsed{
-		Stmt:   "insert into person(name, age) values(?, ?)",
-		BindBy: sqlx.ByAuto,
-		Vars:   []string{"", ""},
-		MaxSeq: 2,
+		RawStmt: "insert into person(name, age) values(?, ?)",
+		BindBy:  sqlx.ByAuto,
+		Vars:    []string{"", ""},
+		MaxSeq:  2,
 	}, parsed)
 
-	parsed, err = sqlx.ParseSQL("auto", "insert into person(name, age) values('a', 'b')")
+	parsed, err = sqlx.ParseSQL("", "insert into person(name, age) values('a', 'b')")
 	assert.Nil(t, err)
 	assert.Equal(t, &sqlx.SQLParsed{
-		Stmt:   "insert into person(name, age) values('a', 'b')",
-		BindBy: sqlx.ByNone,
-		Vars:   []string{},
+		RawStmt: "insert into person(name, age) values('a', 'b')",
+		BindBy:  sqlx.ByNone,
+		Vars:    []string{},
 	}, parsed)
 
 	parsed, err = sqlx.ParseSQL("auto", "insert into person(name, age) values(:, :age)")

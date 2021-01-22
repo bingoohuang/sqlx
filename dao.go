@@ -2,13 +2,29 @@ package sqlx
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"log"
 	"reflect"
 	"strconv"
 	"strings"
 
+	"github.com/bingoohuang/sqlparser/sqlparser"
+
 	"github.com/bingoohuang/gor"
 	"github.com/bingoohuang/strcase"
+)
+
+type Limit struct {
+	Offset int64
+	Length int64
+}
+
+type Count int64
+
+var (
+	LimitType = reflect.TypeOf((*Limit)(nil)).Elem()
+	CountType = reflect.TypeOf((*Count)(nil)).Elem()
 )
 
 // GetDBFn is the function type to get a sql.DBGetter.
@@ -70,23 +86,17 @@ func CreateDao(dao interface{}, createDaoOpts ...CreateDaoOpter) error {
 			return fmt.Errorf("failed to find sqlName %s", f.Name) // nolint:goerr113
 		}
 
-		parsed, err := ParseSQL(sqlName, sqlStmt.Raw())
-		if err != nil {
+		parsed := &SQLParsed{
+			ID:  sqlName,
+			SQL: sqlStmt,
+			opt: option,
+		}
+
+		if err := parsed.fastParseSQL(sqlStmt.Raw()); err != nil {
 			return err
 		}
 
-		p := &SQLParsed{
-			ID:  sqlName,
-			SQL: sqlStmt,
-		}
-
-		p.opt = option
-
-		p.BindBy = parsed.BindBy
-		p.IsQuery = parsed.IsQuery
-
-		r := sqlRun{SQLParsed: p}
-
+		r := sqlRun{SQLParsed: parsed}
 		if err := r.createFn(f); err != nil {
 			return err
 		}
@@ -106,7 +116,7 @@ func MapValueOrDefault(m map[string]string, key, defaultValue string) string {
 }
 
 func (option *CreateDaoOpt) getSQLStmt(field StructField, tags Tags, stack int) (SQLPart, string) {
-	if stack > 10 { // nolint:gomnd
+	if stack > 10 {
 		return nil, ""
 	}
 
@@ -187,7 +197,7 @@ func (r *sqlRun) createFn(f StructField) error {
 	return nil
 }
 
-func (r *sqlRun) MakeFunc(f StructField, numIn int, numOut int) func([]reflect.Value) ([]reflect.Value, error) {
+func (r *sqlRun) MakeFunc(f StructField, numIn, numOut int) func([]reflect.Value) ([]reflect.Value, error) {
 	var fn func(int, StructField, []reflect.Type, []reflect.Value) ([]reflect.Value, error)
 
 	switch isBindByName := r.isBindBy(ByName); {
@@ -220,30 +230,34 @@ type sqlRun struct {
 	*SQLParsed
 }
 
-func (r *sqlRun) evalSeq(numIn int, f StructField, args []reflect.Value) (string, error) {
+func (p *SQLParsed) evalSeq(numIn int, f StructField, args []reflect.Value) error {
 	env := make(map[string]interface{})
 	for i, arg := range args {
 		env[fmt.Sprintf("_%d", i+1)] = arg.Interface()
 	}
 
-	return r.eval(numIn, f, env)
+	if len(args) > 0 {
+		env = p.createFieldSqlParts(env, args[0])
+	}
+
+	return p.eval(numIn, f, env)
 }
 
-func (r *sqlRun) eval(numIn int, f StructField, env map[string]interface{}) (string, error) {
-	runSQL, err := r.SQL.Eval(env)
+func (p *SQLParsed) eval(numIn int, f StructField, env map[string]interface{}) error {
+	runSQL, err := p.SQL.Eval(env)
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	if err := r.parseSQL(r.ID, runSQL); err != nil {
-		return "", err
+	if err := p.parseSQL(runSQL); err != nil {
+		return err
 	}
 
-	if err := r.checkFuncInOut(numIn, f); err != nil {
-		return "", err
+	if err := p.checkFuncInOut(numIn, f); err != nil {
+		return err
 	}
 
-	return runSQL, nil
+	return nil
 }
 
 func (r *sqlRun) queryByName(numIn int, f StructField,
@@ -254,33 +268,51 @@ func (r *sqlRun) queryByName(numIn int, f StructField,
 		bean = args[0]
 	}
 
-	env := r.createNamedMap(bean)
+	parsed := *r.SQLParsed
+	env := parsed.createNamedMap(bean)
 
-	runSQL, err := r.eval(numIn, f, env)
+	if err := parsed.eval(numIn, f, env); err != nil {
+		return nil, err
+	}
+
+	vars, err := parsed.createNamedVars(bean)
 	if err != nil {
 		return nil, err
 	}
 
-	parsed, err := ParseSQL(r.ID, runSQL)
+	counterIndex := indexOfTypes(outTypes, CountType)
+	db := r.opt.DBGetter.GetDB()
+	rows, counter, err := parsed.doQueryDirectVars(db, vars, counterIndex >= 0)
 	if err != nil {
 		return nil, err
 	}
 
-	r.resetSQLParsed(parsed)
+	return parsed.wrapCounter(rows, outTypes, counterIndex, counter)
+}
 
-	vars, err := r.createNamedVars(bean)
-	if err != nil {
-		return nil, err
+func (p *SQLParsed) wrapCounter(rows *sql.Rows, outTypes []reflect.Type, counterIndex int, counterFn func() (int64, error)) ([]reflect.Value, error) {
+	values, err := p.processQueryRows(rows, remove(outTypes, counterIndex))
+	_ = rows.Close()
+	if err != nil || counterFn == nil {
+		return values, err
 	}
 
-	rows, err := r.doQueryDirectVars(vars)
+	counter, err := counterFn()
 	if err != nil {
-		return nil, err
+		return values, err
 	}
 
-	defer rows.Close()
+	return insert(values, counterIndex, reflect.ValueOf(Count(counter))), nil
+}
 
-	return r.processQueryRows(rows, outTypes)
+func indexOfTypes(types []reflect.Type, typ reflect.Type) int {
+	for i, t := range types {
+		if t == typ {
+			return i
+		}
+	}
+
+	return -1
 }
 
 // nolint:funlen
@@ -312,9 +344,9 @@ func (r *sqlRun) execByName(numIn int, f StructField, outTypes []reflect.Type,
 		lastSQL    string
 	)
 
+	parsed := *r.SQLParsed
 	db := r.opt.DBGetter.GetDB()
-
-	tx, err := db.BeginTx(r.opt.Ctx, nil)
+	tx, err := db.BeginTx(parsed.opt.Ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin tx %w", err)
 	}
@@ -324,38 +356,30 @@ func (r *sqlRun) execByName(numIn int, f StructField, outTypes []reflect.Type,
 			item0 = bean.Index(ii)
 		}
 
-		runSQL, err := r.eval(numIn, f, r.createNamedMap(item0))
+		namedMap := parsed.createNamedMap(item0)
+		if err := parsed.eval(numIn, f, namedMap); err != nil {
+			return nil, err
+		}
 
+		if lastSQL != parsed.runSQL {
+			lastSQL = parsed.runSQL
+
+			if pr, err = tx.PrepareContext(parsed.opt.Ctx, parsed.runSQL); err != nil {
+				return nil, fmt.Errorf("failed to prepare sql %s error %w", r.RawStmt, err)
+			}
+		}
+
+		vars, err := parsed.createNamedVars(item0)
 		if err != nil {
 			return nil, err
 		}
 
-		if lastSQL != runSQL {
-			lastSQL = runSQL
+		parsed.logPrepare(vars)
 
-			parsed, err := ParseSQL(r.ID, runSQL)
-			if err != nil {
-				return nil, err
-			}
-
-			r.resetSQLParsed(parsed)
-
-			if pr, err = tx.PrepareContext(r.opt.Ctx, r.Stmt); err != nil {
-				return nil, fmt.Errorf("failed to prepare sql %s error %w", r.Stmt, err)
-			}
-		}
-
-		vars, err := r.createNamedVars(item0)
-		if err != nil {
-			return nil, err
-		}
-
-		r.logPrepare(runSQL, vars)
-
-		lastResult, err = pr.ExecContext(r.opt.Ctx, vars...)
+		lastResult, err = pr.ExecContext(parsed.opt.Ctx, vars...)
 
 		if err != nil {
-			return nil, fmt.Errorf("failed to execute %s error %w", r.SQL, err)
+			return nil, fmt.Errorf("failed to execute %s error %w", parsed.runSQL, err)
 		}
 	}
 
@@ -366,9 +390,34 @@ func (r *sqlRun) execByName(numIn int, f StructField, outTypes []reflect.Type,
 	return convertExecResult(lastResult, lastSQL, outTypes)
 }
 
+func (p *SQLParsed) createFieldSqlParts(m map[string]interface{}, bean reflect.Value) map[string]interface{} {
+	if !bean.IsValid() || bean.Type().Kind() != reflect.Struct {
+		return m
+	}
+
+	structValue := MakeStructValue(bean)
+	for i, f := range structValue.FieldTypes {
+		if sqlPart := f.Tag.Get("sql"); sqlPart != "" {
+			if bean.Field(i).IsZero() {
+				continue
+			}
+
+			if f.Type.AssignableTo(LimitType) {
+				l := bean.Field(i).Interface().(Limit)
+				p.fp.AddFieldSqlPart(sqlPart,
+					[]interface{}{l.Offset, l.Length}, false)
+			} else {
+				p.fp.AddFieldSqlPart(sqlPart,
+					[]interface{}{bean.Field(i).Interface()}, true)
+			}
+		}
+	}
+
+	return m
+}
+
 func (p *SQLParsed) createNamedMap(bean reflect.Value) map[string]interface{} {
 	m := make(map[string]interface{})
-
 	if !bean.IsValid() {
 		return m
 	}
@@ -377,18 +426,19 @@ func (p *SQLParsed) createNamedMap(bean reflect.Value) map[string]interface{} {
 	case reflect.Struct:
 		structValue := MakeStructValue(bean)
 		for i, f := range structValue.FieldTypes {
-			name := f.Name
 			if tagName := f.Tag.Get("name"); tagName != "" {
-				name = tagName
+				m[tagName] = bean.Field(i).Interface()
 			} else {
-				name = strcase.ToCamelLower(name)
+				name := strcase.ToCamelLower(f.Name)
+				m[name] = bean.Field(i).Interface()
 			}
 
-			m[name] = bean.Field(i).Interface()
 		}
 	case reflect.Map:
 		for _, k := range bean.MapKeys() {
-			m[k.Interface().(string)] = bean.MapIndex(k).Interface()
+			if ks, ok := k.Interface().(string); ok {
+				m[ks] = bean.MapIndex(k).Interface()
+			}
 		}
 	}
 
@@ -427,28 +477,28 @@ func (p *SQLParsed) createNamedVars(bean reflect.Value) ([]interface{}, error) {
 	return vars, nil
 }
 
-func (p *SQLParsed) logPrepare(runSQL string, vars interface{}) {
-	p.opt.Logger.LogStart(p.ID, runSQL, vars)
+func (p *SQLParsed) logPrepare(vars interface{}) {
+	p.opt.Logger.LogStart(p.ID, p.runSQL, vars)
 }
 
 func (r *sqlRun) execBySeq(numIn int, f StructField,
 	outTypes []reflect.Type, args []reflect.Value) ([]reflect.Value, error) {
-	runSQL, err := r.evalSeq(numIn, f, args)
-	if err != nil {
+	parsed := *r.SQLParsed
+
+	if err := parsed.evalSeq(numIn, f, args); err != nil {
 		return nil, err
 	}
 
-	vars := r.makeVars(args)
-	r.logPrepare(runSQL, vars)
+	vars := parsed.makeVars(args)
+	parsed.logPrepare(vars)
 
 	db := r.opt.DBGetter.GetDB()
-
-	result, err := db.ExecContext(r.opt.Ctx, r.Stmt, vars...)
+	result, err := db.ExecContext(parsed.opt.Ctx, parsed.runSQL, vars...)
 	if err != nil {
 		return nil, fmt.Errorf("execute %s error %w", r.SQL, err)
 	}
 
-	results, err := convertExecResult(result, r.Stmt, outTypes)
+	results, err := convertExecResult(result, parsed.runSQL, outTypes)
 	if err != nil {
 		return nil, fmt.Errorf("execute %s error %w", r.SQL, err)
 	}
@@ -458,32 +508,29 @@ func (r *sqlRun) execBySeq(numIn int, f StructField,
 
 func (r *sqlRun) queryBySeq(numIn int, f StructField,
 	outTypes []reflect.Type, args []reflect.Value) ([]reflect.Value, error) {
-	runSQL, err := r.evalSeq(numIn, f, args)
-	if err != nil {
+
+	parsed := *r.SQLParsed
+	if err := parsed.evalSeq(numIn, f, args); err != nil {
 		return nil, err
 	}
 
-	parsed, err := ParseSQL(r.ID, runSQL)
-	if err != nil {
-		return nil, err
-	}
+	db := r.opt.DBGetter.GetDB()
+	counterIndex := indexOfTypes(outTypes, CountType)
 
-	r.resetSQLParsed(parsed)
-
-	rows, err := r.doQuery(args)
+	rows, counterFn, err := parsed.doQuery(db, args, counterIndex >= 0)
 	if err != nil {
 		return nil, err
 	}
 
 	defer rows.Close()
 
-	return r.processQueryRows(rows, outTypes)
+	return parsed.wrapCounter(rows, outTypes, counterIndex, counterFn)
 }
 
-func (r *sqlRun) processQueryRows(rows *sql.Rows, outTypes []reflect.Type) ([]reflect.Value, error) {
+func (p *SQLParsed) processQueryRows(rows *sql.Rows, outTypes []reflect.Type) ([]reflect.Value, error) {
 	columns, err := rows.Columns()
 	if err != nil {
-		return nil, fmt.Errorf("get columns %s error %w", r.SQL, err)
+		return nil, fmt.Errorf("get columns %s error %w", p.SQL, err)
 	}
 
 	out0Type := outTypes[0]
@@ -498,17 +545,17 @@ func (r *sqlRun) processQueryRows(rows *sql.Rows, outTypes []reflect.Type) ([]re
 		out0Type = out0Type.Elem()
 	}
 
-	interceptorFn := r.getRowScanInterceptorFn()
-	mapFields, err := r.createMapFields(columns, out0Type, outTypes)
+	interceptorFn := p.getRowScanInterceptorFn()
+	mapFields, err := p.createMapFields(columns, out0Type, outTypes)
 
 	if err != nil {
 		return nil, err
 	}
 
-	for ri := 0; rows.Next() && (r.opt.QueryMaxRows <= 0 || ri < r.opt.QueryMaxRows); ri++ {
+	for ri := 0; rows.Next() && (p.opt.QueryMaxRows <= 0 || ri < p.opt.QueryMaxRows); ri++ {
 		pointers, out := resetDests(out0Type, out0TypePtr, outTypes, mapFields)
 		if err := rows.Scan(pointers[:len(columns)]...); err != nil {
-			return nil, fmt.Errorf("scan rows %s error %w", r.SQL, err)
+			return nil, fmt.Errorf("scan rows %s error %w", p.SQL, err)
 		}
 
 		fillFields(mapFields, pointers)
@@ -537,10 +584,10 @@ func (r *sqlRun) processQueryRows(rows *sql.Rows, outTypes []reflect.Type) ([]re
 		return []reflect.Value{outSlice}, nil
 	}
 
-	return r.noRows(out0Type, out0TypePtr, outTypes)
+	return noRows(out0Type, out0TypePtr, outTypes)
 }
 
-func (r *sqlRun) noRows(out0Type reflect.Type, out0TypePtr bool, outTypes []reflect.Type) ([]reflect.Value, error) {
+func noRows(out0Type reflect.Type, out0TypePtr bool, outTypes []reflect.Type) ([]reflect.Value, error) {
 	switch out0Type.Kind() {
 	case reflect.Map:
 		out := reflect.MakeMap(reflect.MapOf(out0Type.Key(), out0Type.Elem()))
@@ -569,35 +616,82 @@ func (p *SQLParsed) getRowScanInterceptorFn() RowScanInterceptorFn {
 	return nil
 }
 
-func (r *sqlRun) doQuery(args []reflect.Value) (*sql.Rows, error) {
-	vars := r.makeVars(args)
-
-	return r.doQueryDirectVars(vars)
+func (p *SQLParsed) doQuery(db *sql.DB, args []reflect.Value, counting bool) (*sql.Rows, func() (int64, error), error) {
+	vars := p.makeVars(args)
+	return p.doQueryDirectVars(db, vars, counting)
 }
 
-func (r *sqlRun) doQueryDirectVars(vars []interface{}) (*sql.Rows, error) {
-	r.logPrepare(r.Stmt, vars)
+func (p *SQLParsed) doQueryDirectVars(db *sql.DB, vars []interface{}, counting bool) (*sql.Rows, func() (int64, error), error) {
+	p.logPrepare(vars)
 
-	db := r.opt.DBGetter.GetDB()
-
-	rows, err := db.QueryContext(r.opt.Ctx, r.Stmt, vars...)
+	query := p.runSQL
+	rows, err := db.QueryContext(p.opt.Ctx, query, vars...)
 	if err != nil || rows.Err() != nil {
 		if err == nil {
 			err = rows.Err()
 		}
 
-		return nil, fmt.Errorf("execute %s error %w", r.Stmt, err)
+		return nil, nil, fmt.Errorf("execute %s error %w", query, err)
 	}
 
-	return rows, nil
+	if counting {
+		return rows, func() (int64, error) {
+			count, err := p.pagingCount(db, query, vars)
+			return count, err
+		}, nil
+	}
+
+	return rows, nil, nil
 }
 
-func (r *sqlRun) resetSQLParsed(p *SQLParsed) {
-	r.Stmt = p.Stmt
-	r.IsQuery = p.IsQuery
-	r.Vars = p.Vars
-	r.MaxSeq = p.MaxSeq
-	r.BindBy = p.BindBy
+func (p *SQLParsed) pagingCount(db *sql.DB, query string, vars []interface{}) (int64, error) {
+	parsed, err := sqlparser.Parse(query)
+	if err != nil {
+		return 0, err
+	}
+
+	selectQuery, ok := parsed.(*sqlparser.Select)
+	if !ok {
+		return 0, errors.New("not select query")
+	}
+
+	selectQuery.SelectExprs = countStarExprs
+	selectQuery.OrderBy = nil
+	selectQuery.Having = nil
+	oldLimit := selectQuery.Limit
+	selectQuery.Limit = nil
+
+	limitVarsCount := 0
+	if oldLimit != nil {
+		limitVarsCount++
+		if oldLimit.Offset != nil {
+			limitVarsCount++
+		}
+	}
+
+	countQuery := sqlparser.String(selectQuery)
+	vars = vars[:len(vars)-limitVarsCount]
+
+	log.Printf("I! execute qury %s with args %v", countQuery, vars)
+	rows, err := db.QueryContext(p.opt.Ctx, countQuery, vars...)
+	if err != nil || rows.Err() != nil {
+		if err == nil {
+			err = rows.Err()
+		}
+
+		return 0, fmt.Errorf("execute %s error %w", countQuery, err)
+	}
+
+	defer rows.Close()
+
+	rows.Next()
+	var count int64
+	if err := rows.Scan(&count); err != nil {
+		return 0, err
+	}
+
+	return count, nil
+
 }
 
 func (p *SQLParsed) createMapFields(columns []string, out0Type reflect.Type,
@@ -655,14 +749,6 @@ func (p *SQLParsed) createMapFields(columns []string, out0Type reflect.Type,
 	return mapFields, nil
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-
-	return b
-}
-
 func (p *SQLParsed) makeMapField(col string, outType reflect.Type) selectItem {
 	return &mapItem{k: reflect.ValueOf(col), vType: outType.Elem()}
 }
@@ -682,7 +768,7 @@ func (p *SQLParsed) makeStructField(col string, outType reflect.Type) selectItem
 func (p *SQLParsed) makeVars(args []reflect.Value) []interface{} {
 	vars := make([]interface{}, 0, len(p.Vars))
 
-	for i, name := range p.Vars {
+	for i, name := range p.Vars[:len(p.Vars)-len(p.fp.fieldVars)] {
 		if p.BindBy == ByAuto {
 			vars = append(vars, args[i].Interface())
 		} else {
@@ -691,10 +777,17 @@ func (p *SQLParsed) makeVars(args []reflect.Value) []interface{} {
 		}
 	}
 
+	if len(p.fp.fieldVars) > 0 {
+		vars = append(vars, p.fp.fieldVars...)
+	}
+
 	return vars
 }
 
-func (p *SQLParsed) logError(err error) { p.opt.Logger.LogError(err) }
+func (p *SQLParsed) logError(err error) {
+	log.Printf("E! error: %v", err)
+	p.opt.Logger.LogError(err)
+}
 
 func convertExecResult(result sql.Result, stmt string, outTypes []reflect.Type) ([]reflect.Value, error) {
 	if len(outTypes) == 0 {
@@ -715,7 +808,7 @@ func convertExecResult(result sql.Result, stmt string, outTypes []reflect.Type) 
 	results := make([]reflect.Value, 0)
 
 	if len(outTypes) == 1 {
-		if firstWord == "INSERT" { // nolint:goconst
+		if firstWord == "INSERT" {
 			return append(results, reflect.ValueOf(lastInsertIDVal).Convert(outTypes[0])), nil
 		}
 
@@ -730,42 +823,6 @@ func convertExecResult(result sql.Result, stmt string, outTypes []reflect.Type) 
 	}
 
 	return results, nil
-}
-
-func convertSQLBindMarks(db *sql.DB, s string) string {
-	driverName := LookupDriverName(db.Driver())
-	switch driverName {
-	case "postgres":
-		return replaceQuestionMark4Postgres(s)
-	default:
-		return s
-	}
-}
-
-func replaceQuestionMark4Postgres(s string) string {
-	r := ""
-
-	for seq := 1; ; seq++ {
-		pos := strings.Index(s, "?")
-		if pos < 0 {
-			r += s
-			break
-		}
-
-		r += s[0:pos] + "$" + strconv.Itoa(seq)
-		s = s[pos+1:]
-	}
-
-	return r
-}
-
-func matchesField2Col(structType reflect.Type, field, col string) bool {
-	f, _ := structType.FieldByName(field)
-	if tagName := f.Tag.Get("name"); tagName != "" {
-		return tagName == col
-	}
-
-	return strings.EqualFold(field, col) || strings.EqualFold(field, strcase.ToCamel(col))
 }
 
 type selectItem interface {

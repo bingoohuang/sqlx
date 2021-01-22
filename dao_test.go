@@ -513,11 +513,24 @@ type personTime struct {
 	Addr     string
 	Birthday MyTime
 }
+
+type queryCond struct {
+	Addr string `sql:"addr like ?"`
+}
+type queryCond2 struct {
+	Addr  string     `sql:"addr like ?"`
+	Limit sqlx.Limit `sql:"limit ?,?"`
+}
+
 type personTimeDao struct {
 	CreateTable func()
 	Add         func(m personTime) (lastInsertID uint64)
 	Find        func(uint64) (personTime, error)
 	Delete      func(uint64) (effectedRows int)
+
+	// 根据查询条件，查询
+	Query  func(queryCond) ([]personTime, error)              `sql:"select id, age, addr, birthday from person"`
+	Query2 func(queryCond2) ([]personTime, sqlx.Count, error) `sql:"select id, age, addr, birthday from person"`
 
 	Logger sqlx.DaoLogger
 	Error  error
@@ -532,7 +545,6 @@ func TestTime(t *testing.T) {
 	that.Nil(sqlx.CreateDao(dao, sqlx.WithDB(openDB(t)), sqlx.WithSQLStr(dotSQLTime)))
 
 	now, _ := time.Parse("2006-01-02 15:04:05", "2020-03-31 17:17:40")
-
 	dao.CreateTable()
 
 	p := personTime{
@@ -547,6 +559,20 @@ func TestTime(t *testing.T) {
 	p2, err := dao.Find(lastInsertID)
 	that.Equal(p, p2)
 	that.Nil(err)
+
+	persons, err := dao.Query(queryCond{})
+	that.Nil(err)
+	that.Equal([]personTime{p}, persons)
+
+	persons, err = dao.Query(queryCond{Addr: "%a%"})
+	that.Nil(err)
+	that.Equal([]personTime{p}, persons)
+
+	var count sqlx.Count
+	persons, count, err = dao.Query2(queryCond2{Addr: "%a%", Limit: sqlx.Limit{Length: 10}})
+	that.Nil(err)
+	that.Equal([]personTime{p}, persons)
+	that.Equal(sqlx.Count(1), count)
 
 	effectedRows := dao.Delete(lastInsertID)
 	that.Equal(1, effectedRows)

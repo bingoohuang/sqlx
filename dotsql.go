@@ -3,9 +3,12 @@ package sqlx
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
+	"github.com/bingoohuang/sqlparser/sqlparser"
 	"io"
 	"os"
+	"reflect"
 	"regexp"
 	"strings"
 	"unicode"
@@ -14,6 +17,107 @@ import (
 	"github.com/antonmedv/expr/vm"
 	funk "github.com/thoas/go-funk"
 )
+
+type SQL struct {
+	Query string
+	Vars  []interface{}
+
+	CountQuery string
+	CuntVars   []interface{}
+}
+
+func CreateSQL(baseSQL string, cond interface{}) (*SQL, error) {
+	if cond == nil {
+		return &SQL{
+			Query: baseSQL,
+		}, nil
+	}
+
+	vc := reflect.ValueOf(cond)
+	if vc.Kind() == reflect.Ptr {
+		vc = vc.Elem()
+	}
+
+	if vc.Kind() != reflect.Struct {
+		return nil, errors.New("condition should be struct value or pointer to struct`")
+	}
+
+	vt := vc.Type()
+	s := &SQL{Query: baseSQL}
+
+	p, err := sqlparser.Parse(baseSQL)
+	if err != nil {
+		return nil, err
+	}
+
+	iw, w := p.(sqlparser.IWhere)
+	if w {
+		w = iw.GetWhere() != nil
+	}
+
+	for i := 0; i < vt.NumField(); i++ {
+		vtf := vt.Field(i)
+		tag := vtf.Tag.Get("sql")
+		if tag == "" {
+			continue
+		}
+
+		fv := vc.Field(i)
+		if fv.IsZero() {
+			continue
+		}
+
+		if vtf.Type.AssignableTo(LimitType) {
+			l := fv.Interface().(Limit)
+			s.Query += " " + tag
+			s.Vars = append(s.Vars, l.Offset, l.Length)
+			continue
+		}
+
+		if i == 0 && !w {
+			s.Query += " where " + tag
+		} else {
+			s.Query += " and " + tag
+		}
+
+		num := strings.Count(tag, "?")
+		if num > 0 {
+			fvi := fv.Interface()
+			for j := 0; j < num; j++ {
+				s.Vars = append(s.Vars, fvi)
+			}
+		}
+	}
+
+	p, err = sqlparser.Parse(s.Query)
+	if err != nil {
+		return nil, err
+	}
+
+	selectQuery, ok := p.(*sqlparser.Select)
+	if !ok {
+		return s, nil
+	}
+
+	selectQuery.SelectExprs = countStarExprs
+	selectQuery.OrderBy = nil
+	selectQuery.Having = nil
+	oldLimit := selectQuery.Limit
+	selectQuery.Limit = nil
+
+	limitVarsCount := 0
+	if oldLimit != nil {
+		limitVarsCount++
+		if oldLimit.Offset != nil {
+			limitVarsCount++
+		}
+	}
+
+	s.CountQuery = sqlparser.String(selectQuery)
+	s.CuntVars = s.Vars[:len(s.Vars)-limitVarsCount]
+
+	return s, nil
+}
 
 // DotSQLItem tells the SQL details.
 type DotSQLItem struct {

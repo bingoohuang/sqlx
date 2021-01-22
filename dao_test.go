@@ -522,6 +522,26 @@ type queryCond2 struct {
 	Limit sqlx.Limit `sql:"limit ?,?"`
 }
 
+func TestCreateSQL(t *testing.T) {
+	query, err := sqlx.CreateSQL("select * from person", queryCond{Addr: "%a%"})
+	assert.Nil(t, err)
+	assert.Equal(t, sqlx.SQL{
+		Query:      "select * from person where addr like ?",
+		Vars:       []interface{}{"%a%"},
+		CountQuery: "select count(*) from person where addr like ?",
+		CuntVars:   []interface{}{"%a%"},
+	}, *query)
+
+	query, err = sqlx.CreateSQL("select * from person", queryCond2{Addr: "%a%", Limit: sqlx.Limit{Length: 10}})
+	assert.Nil(t, err)
+	assert.Equal(t, sqlx.SQL{
+		Query:      "select * from person where addr like ? limit ?,?",
+		Vars:       []interface{}{"%a%", int64(0), int64(10)},
+		CountQuery: "select count(*) from person where addr like ?",
+		CuntVars:   []interface{}{"%a%"},
+	}, *query)
+}
+
 type personTimeDao struct {
 	CreateTable func()
 	Add         func(m personTime) (lastInsertID uint64)

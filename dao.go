@@ -1,7 +1,9 @@
 package sqlx
 
 import (
+	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"log"
@@ -28,27 +30,35 @@ var (
 )
 
 // GetDBFn is the function type to get a sql.DBGetter.
-type GetDBFn func() *sql.DB
+type GetDBFn func() SqlDB
 
 // DBGetter is the interface to get a sql.DBGetter.
-type DBGetter interface{ GetDB() *sql.DB }
+type DBGetter interface{ GetDB() SqlDB }
 
 // GetDB returns a sql.DBGetter.
-func (f GetDBFn) GetDB() *sql.DB { return f() }
+func (f GetDBFn) GetDB() SqlDB { return f() }
 
 // StdDB is the wrapper for sql.DBGetter.
-type StdDB struct{ db *sql.DB }
+type StdDB struct{ db SqlDB }
 
 // MakeDB makes a new StdDB from sql.DBGetter.
-func MakeDB(db *sql.DB) *StdDB { return &StdDB{db: db} }
+func MakeDB(db SqlDB) *StdDB { return &StdDB{db: db} }
 
 // GetDB returns a sql.DBGetter.
-func (f StdDB) GetDB() *sql.DB { return f.db }
+func (f StdDB) GetDB() SqlDB { return f.db }
+
+type SqlDB interface {
+	Driver() driver.Driver
+
+	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+}
 
 // nolint:gochecknoglobals
 var (
 	// DB is the global sql.DB for convenience.
-	DB *sql.DB
+	DB SqlDB
 )
 
 // CreateDao fulfils the dao (should be pointer).
@@ -616,12 +626,12 @@ func (p *SQLParsed) getRowScanInterceptorFn() RowScanInterceptorFn {
 	return nil
 }
 
-func (p *SQLParsed) doQuery(db *sql.DB, args []reflect.Value, counting bool) (*sql.Rows, func() (int64, error), error) {
+func (p *SQLParsed) doQuery(db SqlDB, args []reflect.Value, counting bool) (*sql.Rows, func() (int64, error), error) {
 	vars := p.makeVars(args)
 	return p.doQueryDirectVars(db, vars, counting)
 }
 
-func (p *SQLParsed) doQueryDirectVars(db *sql.DB, vars []interface{}, counting bool) (*sql.Rows, func() (int64, error), error) {
+func (p *SQLParsed) doQueryDirectVars(db SqlDB, vars []interface{}, counting bool) (*sql.Rows, func() (int64, error), error) {
 	p.logPrepare(vars)
 
 	query := p.runSQL
@@ -644,7 +654,7 @@ func (p *SQLParsed) doQueryDirectVars(db *sql.DB, vars []interface{}, counting b
 	return rows, nil, nil
 }
 
-func (p *SQLParsed) pagingCount(db *sql.DB, query string, vars []interface{}) (int64, error) {
+func (p *SQLParsed) pagingCount(db SqlDB, query string, vars []interface{}) (int64, error) {
 	parsed, err := sqlparser.Parse(query)
 	if err != nil {
 		return 0, err

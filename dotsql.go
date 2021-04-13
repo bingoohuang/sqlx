@@ -55,6 +55,8 @@ func CreateSQL(baseSQL string, cond interface{}) (*SQL, error) {
 		w = iw.GetWhere() != nil
 	}
 
+	first := true
+
 	for i := 0; i < vt.NumField(); i++ {
 		vtf := vt.Field(i)
 		tag := vtf.Tag.Get("sql")
@@ -74,11 +76,13 @@ func CreateSQL(baseSQL string, cond interface{}) (*SQL, error) {
 			continue
 		}
 
-		if i == 0 && !w {
+		if first && !w {
 			s.Query += " where " + tag
 		} else {
 			s.Query += " and " + tag
 		}
+
+		first = false
 
 		num := strings.Count(tag, "?")
 		if num > 0 {

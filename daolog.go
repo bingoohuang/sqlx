@@ -1,7 +1,6 @@
 package sqlx
 
 import (
-	"database/sql"
 	"reflect"
 
 	"github.com/bingoohuang/gor"
@@ -54,7 +53,7 @@ func createDBGetter(v reflect.Value, option *CreateDaoOpt) {
 		return
 	}
 
-	option.DBGetter = GetDBFn(func() *sql.DB { return DB })
+	option.DBGetter = GetDBFn(func() SqlDB { return DB })
 }
 
 func createLogger(v reflect.Value, option *CreateDaoOpt) {

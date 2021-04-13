@@ -523,10 +523,10 @@ type queryCond2 struct {
 }
 
 func TestCreateSQL(t *testing.T) {
-	query, err := sqlx.CreateSQL("select * from person", queryCond{Addr: "%a%"})
+	query, err := sqlx.CreateSQL("select * from person order by addr", queryCond{Addr: "%a%"})
 	assert.Nil(t, err)
 	assert.Equal(t, sqlx.SQL{
-		Query:      "select * from person where addr like ?",
+		Query:      "select * from person where addr like ? order by addr",
 		Vars:       []interface{}{"%a%"},
 		CountQuery: "select count(*) from person where addr like ?",
 		CuntVars:   []interface{}{"%a%"},

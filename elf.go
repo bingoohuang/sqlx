@@ -1,7 +1,6 @@
 package sqlx
 
 import (
-	"database/sql"
 	"github.com/bingoohuang/sqlparser/sqlparser"
 	"github.com/bingoohuang/strcase"
 	"reflect"
@@ -61,7 +60,7 @@ func max(a, b int) int {
 	return b
 }
 
-func convertSQLBindMarks(db *sql.DB, s string) string {
+func convertSQLBindMarks(db SqlDB, s string) string {
 	driverName := LookupDriverName(db.Driver())
 	switch driverName {
 	case "postgres":

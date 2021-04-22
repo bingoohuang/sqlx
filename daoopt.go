@@ -2,6 +2,7 @@ package sqlx
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"reflect"
 
@@ -70,7 +71,7 @@ func WithSQLFile(sqlFile string) CreateDaoOpter {
 }
 
 // WithDB imports a db.
-func WithDB(db SqlDB) CreateDaoOpter {
+func WithDB(db *sql.DB) CreateDaoOpter {
 	return CreateDaoOptFn(func(opt *CreateDaoOpt) { opt.DBGetter = MakeDB(db) })
 }
 

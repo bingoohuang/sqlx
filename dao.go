@@ -1,9 +1,7 @@
 package sqlx
 
 import (
-	"context"
 	"database/sql"
-	"database/sql/driver"
 	"errors"
 	"fmt"
 	"log"
@@ -30,36 +28,40 @@ var (
 )
 
 // GetDBFn is the function type to get a sql.DBGetter.
-type GetDBFn func() SqlDB
+type GetDBFn func() *sql.DB
 
 // DBGetter is the interface to get a sql.DBGetter.
-type DBGetter interface{ GetDB() SqlDB }
+type DBGetter interface{ GetDB() *sql.DB }
 
 // GetDB returns a sql.DBGetter.
-func (f GetDBFn) GetDB() SqlDB { return f() }
+func (f GetDBFn) GetDB() *sql.DB { return f() }
 
 // StdDB is the wrapper for sql.DBGetter.
-type StdDB struct{ db SqlDB }
+type StdDB struct{ db *sql.DB }
 
 // MakeDB makes a new StdDB from sql.DBGetter.
-func MakeDB(db SqlDB) *StdDB { return &StdDB{db: db} }
+func MakeDB(db *sql.DB) *StdDB { return &StdDB{db: db} }
 
 // GetDB returns a sql.DBGetter.
-func (f StdDB) GetDB() SqlDB { return f.db }
-
-type SqlDB interface {
-	Driver() driver.Driver
-
-	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
-	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
-	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
-}
+func (f StdDB) GetDB() *sql.DB { return f.db }
 
 // nolint:gochecknoglobals
 var (
 	// DB is the global sql.DB for convenience.
-	DB SqlDB
+	DB *sql.DB
+	// SQLReplacer is the global SQLReplacer.
+	SQLReplacer QueryReplacer
 )
+
+type QueryReplacerFn func(query string) (string, error)
+
+type QueryReplacer interface {
+	ReplacerQuery(query string) (string, error)
+}
+
+func (d QueryReplacerFn) ReplacerQuery(query string) (string, error) {
+	return d(query)
+}
 
 // CreateDao fulfils the dao (should be pointer).
 func CreateDao(dao interface{}, createDaoOpts ...CreateDaoOpter) error {
@@ -374,7 +376,11 @@ func (r *sqlRun) execByName(numIn int, f StructField, outTypes []reflect.Type,
 		if lastSQL != parsed.runSQL {
 			lastSQL = parsed.runSQL
 
-			if pr, err = tx.PrepareContext(parsed.opt.Ctx, parsed.runSQL); err != nil {
+			query, err := r.replaceQuery(parsed.runSQL)
+			if err != nil {
+				return nil, fmt.Errorf("replaceQuery %s error %w", parsed.runSQL, err)
+			}
+			if pr, err = tx.PrepareContext(parsed.opt.Ctx, query); err != nil {
 				return nil, fmt.Errorf("failed to prepare sql %s error %w", r.RawStmt, err)
 			}
 		}
@@ -389,7 +395,7 @@ func (r *sqlRun) execByName(numIn int, f StructField, outTypes []reflect.Type,
 		lastResult, err = pr.ExecContext(parsed.opt.Ctx, vars...)
 
 		if err != nil {
-			return nil, fmt.Errorf("failed to execute %s error %w", parsed.runSQL, err)
+			return nil, fmt.Errorf("failed to execute %s with vars %v error %w", parsed.runSQL, vars, err)
 		}
 	}
 
@@ -503,12 +509,17 @@ func (r *sqlRun) execBySeq(numIn int, f StructField,
 	parsed.logPrepare(vars)
 
 	db := r.opt.DBGetter.GetDB()
-	result, err := db.ExecContext(parsed.opt.Ctx, parsed.runSQL, vars...)
+	query, err := r.replaceQuery(parsed.runSQL)
+	if err != nil {
+		return nil, fmt.Errorf("replaceQuery %s error %w", parsed.runSQL, err)
+	}
+
+	result, err := db.ExecContext(parsed.opt.Ctx, query, vars...)
 	if err != nil {
 		return nil, fmt.Errorf("execute %s error %w", r.SQL, err)
 	}
 
-	results, err := convertExecResult(result, parsed.runSQL, outTypes)
+	results, err := convertExecResult(result, query, outTypes)
 	if err != nil {
 		return nil, fmt.Errorf("execute %s error %w", r.SQL, err)
 	}
@@ -626,15 +637,19 @@ func (p *SQLParsed) getRowScanInterceptorFn() RowScanInterceptorFn {
 	return nil
 }
 
-func (p *SQLParsed) doQuery(db SqlDB, args []reflect.Value, counting bool) (*sql.Rows, func() (int64, error), error) {
+func (p *SQLParsed) doQuery(db *sql.DB, args []reflect.Value, counting bool) (*sql.Rows, func() (int64, error), error) {
 	vars := p.makeVars(args)
 	return p.doQueryDirectVars(db, vars, counting)
 }
 
-func (p *SQLParsed) doQueryDirectVars(db SqlDB, vars []interface{}, counting bool) (*sql.Rows, func() (int64, error), error) {
+func (p *SQLParsed) doQueryDirectVars(db *sql.DB, vars []interface{}, counting bool) (*sql.Rows, func() (int64, error), error) {
 	p.logPrepare(vars)
 
-	query := p.runSQL
+	query, err := p.replaceQuery(p.runSQL)
+	if err != nil {
+		return nil, nil, fmt.Errorf("replaceQuery %s error %w", query, err)
+	}
+
 	rows, err := db.QueryContext(p.opt.Ctx, query, vars...)
 	if err != nil || rows.Err() != nil {
 		if err == nil {
@@ -654,7 +669,7 @@ func (p *SQLParsed) doQueryDirectVars(db SqlDB, vars []interface{}, counting boo
 	return rows, nil, nil
 }
 
-func (p *SQLParsed) pagingCount(db SqlDB, query string, vars []interface{}) (int64, error) {
+func (p *SQLParsed) pagingCount(db *sql.DB, query string, vars []interface{}) (int64, error) {
 	parsed, err := sqlparser.Parse(query)
 	if err != nil {
 		return 0, err
@@ -683,6 +698,12 @@ func (p *SQLParsed) pagingCount(db SqlDB, query string, vars []interface{}) (int
 	vars = vars[:len(vars)-limitVarsCount]
 
 	log.Printf("I! execute qury %s with args %v", countQuery, vars)
+
+	countQuery, err = p.replaceQuery(countQuery)
+	if err != nil {
+		return 0, fmt.Errorf("replaceQuery %s error %w", countQuery, err)
+	}
+
 	rows, err := db.QueryContext(p.opt.Ctx, countQuery, vars...)
 	if err != nil || rows.Err() != nil {
 		if err == nil {
@@ -799,22 +820,15 @@ func (p *SQLParsed) logError(err error) {
 	p.opt.Logger.LogError(err)
 }
 
-func convertExecResult(result sql.Result, stmt string, outTypes []reflect.Type) ([]reflect.Value, error) {
+func convertExecResult(result sql.Result, query string, outTypes []reflect.Type) ([]reflect.Value, error) {
 	if len(outTypes) == 0 {
 		return []reflect.Value{}, nil
 	}
 
-	lastInsertIDVal, err := result.LastInsertId()
-	if err != nil {
-		return nil, fmt.Errorf("LastInsertId %s error %w", stmt, err)
-	}
+	lastInsertIDVal, _ := result.LastInsertId()
+	rowsAffectedVal, _ := result.RowsAffected()
 
-	rowsAffectedVal, err := result.RowsAffected()
-	if err != nil {
-		return nil, fmt.Errorf("RowsAffected %s error %w", stmt, err)
-	}
-
-	firstWord := strings.ToUpper(FirstWord(stmt))
+	firstWord := strings.ToUpper(FirstWord(query))
 	results := make([]reflect.Value, 0)
 
 	if len(outTypes) == 1 {

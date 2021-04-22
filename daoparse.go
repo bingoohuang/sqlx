@@ -75,6 +75,14 @@ type SQLParsed struct {
 	runSQL string
 }
 
+func (p SQLParsed) replaceQuery(query string) (string, error) {
+	if SQLReplacer == nil {
+		return query, nil
+	}
+
+	return SQLReplacer.ReplacerQuery(query)
+}
+
 func (p SQLParsed) isBindBy(by ...bindBy) bool {
 	for _, b := range by {
 		if p.BindBy == b {

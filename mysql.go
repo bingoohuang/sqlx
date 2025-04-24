@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bingoohuang/gonet"
 	"github.com/go-sql-driver/mysql"
 	"github.com/jinzhu/gorm"
 	"github.com/spf13/viper"
@@ -103,7 +102,7 @@ func MySQLBindAddress(mysqlNet, bindAddress string, defaultDialer *net.Dialer) e
 
 // ResolveIP resolves the address to IP.
 func ResolveIP(address string) (net.IP, error) {
-	if gonet.IsIP(address) {
+	if IsIP(address) {
 		return net.ParseIP(address), nil
 	}
 
@@ -113,4 +112,10 @@ func ResolveIP(address string) (net.IP, error) {
 	}
 
 	return ipAddr.IP, nil
+}
+
+// IsIP 判断 host 字符串表达式是不是IP(v4/v6)的格式
+func IsIP(host string) bool {
+	ip := net.ParseIP(host)
+	return ip != nil
 }
